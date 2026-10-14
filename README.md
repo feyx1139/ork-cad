@@ -1,12 +1,15 @@
 # ork-cad
 
+**Use it in your browser: https://feyx1139.github.io/ork-cad/** (nothing to install, and your
+files stay on your computer).
+
 Turns OpenRocket designs (`.ork`) into parts ready for 3D printing: STL files made from exact CAD
 (real curves, cut into triangles within 0.01 mm), not the coarse mesh OpenRocket's own export
 makes, and exact STEP files for Onshape when you want to edit a part. Holes, pockets, nut traps and
 other print details that OpenRocket can't model are added from lines in each part's comment. A
 part you made in CAD yourself can be compared with the design, and the changes that make the design
-match it are worked out for you. The parts are checked against OpenRocket itself. It runs as a website and as a command-line tool, and
-both use the same code in `src/`.
+match it are worked out for you. The parts are checked against OpenRocket itself. It runs as a
+website and as a command-line tool, and both use the same code in `src/`.
 
 Needs Node.js 24 or newer. To run it from a copy of this repository:
 
