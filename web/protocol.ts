@@ -7,6 +7,7 @@ export type Request =
   | { id: number; type: "setDetails"; key: string; details: string }
   | { id: number; type: "file"; key: string; format: "stl" | "step" }
   | { id: number; type: "zip" }
+  | { id: number; type: "rocketStep" }
   | { id: number; type: "save" }
   | { id: number; type: "compare"; key: string; bytes: ArrayBuffer; fileName: string; flip?: boolean }
   | { id: number; type: "applyMatch"; key: string };

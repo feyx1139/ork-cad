@@ -3,6 +3,7 @@
 // All the CAD work happens in worker.ts.
 
 import { Viewer } from "./viewer.ts";
+import { partColor } from "../src/export/colors.ts";
 import type { Message, RequestBody } from "./protocol.ts";
 import type { MatchView, PartView, SpacesView } from "./session.ts";
 
@@ -12,6 +13,7 @@ const partsEl = $<HTMLUListElement>("parts");
 const spacesEl = $("spaces");
 const selectedEl = $("selected");
 const zipButton = $<HTMLButtonElement>("zip");
+const onshapeButton = $<HTMLButtonElement>("onshape");
 const saveButton = $<HTMLButtonElement>("save");
 const welcome = $("welcome");
 const toolbar = $("toolbar");
@@ -86,7 +88,7 @@ async function open(file: File): Promise<void> {
   showSelected();
   welcome.hidden = true;
   toolbar.hidden = false;
-  zipButton.disabled = saveButton.disabled = true;
+  zipButton.disabled = onshapeButton.disabled = saveButton.disabled = true;
   const bytes = await file.arrayBuffer();
   fitPending = true;
   const reply = await request({ type: "open", bytes, fileName: file.name }, [bytes]);
@@ -97,7 +99,7 @@ async function open(file: File): Promise<void> {
     toolbar.hidden = true;
     return;
   }
-  zipButton.disabled = parts.size === 0;
+  zipButton.disabled = onshapeButton.disabled = parts.size === 0;
   showSelected();
   const problems = [...parts.values()].filter((p) => p.errors.length).length;
   setStatus(`${file.name}: ${parts.size} parts${problems ? `, ${problems} with problems in their details` : ""}.`);
@@ -132,10 +134,9 @@ window.addEventListener("beforeunload", (e) => {
 // ---------------------------------------------------------------------------------------------
 // Parts list and 3D view
 
+/** The same colours the STEP file for Onshape has. */
 function colorOf(p: PartView): string {
-  if (p.printed) return "#e8833a";
-  if (/paper|card|kraft|glassine|fiber/i.test(p.material)) return "#c9a56c";
-  return "#9aa4b1";
+  return partColor(p.material);
 }
 
 function showPart(p: PartView): void {
@@ -462,6 +463,11 @@ async function download(body: RequestBody, button: HTMLButtonElement): Promise<b
 }
 
 zipButton.addEventListener("click", () => void download({ type: "zip" }, zipButton));
+onshapeButton.addEventListener("click", async () => {
+  if (await download({ type: "rocketStep" }, onshapeButton)) {
+    setStatus("Saved the STEP file. In Onshape: Import it, and every part shows up separately, with its name and exact sizes.");
+  }
+});
 saveButton.addEventListener("click", async () => {
   if (!(await download({ type: "save" }, saveButton))) return;
   unsaved = false;

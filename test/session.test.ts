@@ -124,6 +124,14 @@ test("downloads: one part, everything in a zip, and the .ork with details", asyn
   );
   const report = strFromU8(files["report.txt"]);
   assert.match(report, new RegExp(`detail: ${HOLES}`));
+
+  // The whole rocket for Onshape: one STEP file, every part a separate named component.
+  const onshape = session.rocketStep();
+  assert.equal(onshape.name, "3d-printable-nose-cone-and-fins for Onshape.step");
+  const assembly = new TextDecoder().decode(onshape.bytes);
+  assert.equal((assembly.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\(/g) ?? []).length, 12, "10 parts, the fin set as 3 fins");
+  assert.match(assembly, /PRODUCT\('Printable nose cone'/);
+  assert.match(assembly, /PRODUCT\('Trapezoidal fin set 3'/);
   assert.match(report, /05 Trapezoidal fin set \(print 3\)\.stl {2}[\d.]+ cm³ each, 3 = /);
 
   const saved = session.saveOrk();

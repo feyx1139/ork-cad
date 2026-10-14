@@ -4,9 +4,9 @@
 //   npm run export -- <rocket.ork> [output folder] [--step]
 //
 // Each STL holds one copy of its part (a fin set's file is one fin; its name says how many to
-// print), in its place on the rocket. --step also writes exact STEP files for Onshape: every copy in
-// its place, so importing them into one Onshape document gives one tab per part, plus
-// assembly.step with the whole rocket. report.txt has the summary printed here.
+// print), in its place on the rocket. --step also writes exact STEP files for Onshape:
+// assembly.step with the whole rocket, every part a separate named component in its place, and a
+// STEP file per part. report.txt has the summary printed here.
 
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -29,12 +29,11 @@ const outDir = outArg ?? path.join("out", safeFileName(path.basename(input, path
 await mkdir(outDir, { recursive: true });
 
 const result = exportRocket(model, { step });
-const bytes = async (blob: Blob) => Buffer.from(await blob.arrayBuffer());
 for (const p of result.parts) {
   await writeFile(path.join(outDir, p.fileName), p.stl);
-  if (p.step) await writeFile(path.join(outDir, p.fileName.replace(/( \(print \d+\))?\.stl$/, ".step")), await bytes(p.step));
+  if (p.step) await writeFile(path.join(outDir, p.fileName.replace(/( \(print \d+\))?\.stl$/, ".step")), p.step);
 }
-if (result.assembly) await writeFile(path.join(outDir, "assembly.step"), await bytes(result.assembly));
+if (result.assembly) await writeFile(path.join(outDir, "assembly.step"), result.assembly);
 const report = reportText(
   model,
   result.parts.map((p) => ({ ...p, details: p.part.features.map((f) => f.source), errors: [] })),

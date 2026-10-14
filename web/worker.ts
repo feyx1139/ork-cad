@@ -60,6 +60,11 @@ async function handle(req: Request): Promise<void> {
         const file = await need(session).zip();
         return sendFile(req.id, file.name, file.bytes);
       }
+      case "rocketStep": {
+        post({ type: "progress", text: "Making the STEP file for Onshape…" });
+        const file = need(session).rocketStep();
+        return sendFile(req.id, file.name, file.bytes);
+      }
       case "save": {
         const file = need(session).saveOrk();
         return sendFile(req.id, file.name, file.bytes);

@@ -11,7 +11,8 @@ import { FeatureError, parseFeatures } from "../src/features/parse.ts";
 import { buildPart } from "../src/geometry/parts.ts";
 import { solidVolume } from "../src/geometry/measure.ts";
 import { findCompartments } from "../src/checks/compartments.ts";
-import { safeFileName, stepOf, stlName, stlOf } from "../src/export/files.ts";
+import { safeFileName, stepFile, stepOf, stepPieces, stlName, stlOf, type StepPiece } from "../src/export/files.ts";
+import { PRINTED } from "../src/export/colors.ts";
 import { reportText } from "../src/export/report.ts";
 import { readCad } from "../src/match/cad.ts";
 import { applyMatch, matchPart, matchText, type MatchResult } from "../src/match/compare.ts";
@@ -81,7 +82,6 @@ export interface FileOut {
 
 /** Fine enough to look smooth on screen; STL files for printing use the finer PRINT_MESH (src/export/files.ts). */
 const VIEW_MESH = { tolerance: 0.05, angularTolerance: 0.2 };
-const PRINTED = /PLA|PETG|ABS|ASA|nylon|resin|print/i;
 
 export class Session {
   private solids = new Map<string, Shape3D[]>();
@@ -240,8 +240,20 @@ export class Session {
     const solids = this.solids.get(key) ?? [];
     if (!solids.length) throw new Error(`${part.name} has no shape to export.`);
     const base = safeFileName(part.name);
-    if (format === "step") return { name: `${base}.step`, bytes: await bytesOf(stepOf(part, solids)) };
+    if (format === "step") return { name: `${base}.step`, bytes: stepOf(part, solids) };
     return { name: stlName(base, solids.length), bytes: stlOf(solids[0], part.name) };
+  }
+
+  /**
+   * The whole rocket as one STEP file for Onshape: every part (every copy of it) a separate, named
+   * component with exact surfaces, in its place on the rocket.
+   */
+  rocketStep(): FileOut {
+    const pieces: StepPiece[] = [];
+    for (const part of this.parts) pieces.push(...stepPieces(part, this.solids.get(this.keyOf(part)) ?? []));
+    if (!pieces.length) throw new Error("There are no parts to put in the file.");
+    const name = safeFileName(this.rocket.fileName.replace(/\.ork$/i, "")) || "rocket";
+    return { name: `${name} for Onshape.step`, bytes: stepFile(this.rocket.name, pieces) };
   }
 
   /** Every part as an STL for printing, and report.txt. */

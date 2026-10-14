@@ -47,7 +47,7 @@ for (const rocket of ROCKETS) {
     const result = exportRocket(model, { step: true });
     let total = 0;
     for (const p of result.parts) {
-      const back = (await importSTEP(p.step!)) as Shape3D;
+      const back = (await importSTEP(new Blob([p.step!.slice()]))) as Shape3D;
       const volume = solidVolume(back);
       assert.ok(Math.abs(volume / p.volume - 1) < 1e-7, `${p.fileName}: volume ${volume} vs ${p.volume}`);
       assert.equal(back.solids.length, p.pieces, `${p.fileName}: solids`);
@@ -57,12 +57,22 @@ for (const rocket of ROCKETS) {
       total += volume;
     }
     // The assembly holds every copy of every part.
-    const all = (await importSTEP(result.assembly!)) as Shape3D;
+    const all = (await importSTEP(new Blob([result.assembly!.slice()]))) as Shape3D;
     const pieces = result.parts.reduce((n, p) => n + p.pieces, 0);
     assert.equal(all.solids.length, pieces, "solids in assembly.step");
     const assemblyVolume = solidVolume(all);
     assert.ok(Math.abs(assemblyVolume / total - 1) < 1e-7, `assembly volume ${assemblyVolume} vs ${total}`);
     const [[, , zmin], [, , zmax]] = all.boundingBox.bounds;
     t.diagnostic(`${result.parts.length} part files, ${pieces} solids, assembly spans Z ${zmin.toFixed(3)} to ${zmax.toFixed(3)} mm`);
+
+    // It's an assembly: the rocket, with a named component for every copy of every part, so CAD
+    // programs list them separately. In millimetres, coloured like the website.
+    const text = new TextDecoder().decode(result.assembly!);
+    const products = [...text.matchAll(/PRODUCT\('((?:[^']|'')*)'/g)].map((m) => m[1].replace(/''/g, "'"));
+    const names = result.parts.flatMap((p) => (p.copies > 1 ? Array.from({ length: p.copies }, (_, i) => `${p.part.name} ${i + 1}`) : [p.part.name]));
+    assert.deepEqual(products.slice().sort(), [model.name, ...names].sort(), "a product per piece, and the rocket");
+    assert.equal((text.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\(/g) ?? []).length, names.length, "every piece is a component of the rocket");
+    assert.match(text, /SI_UNIT\(\.MILLI\.,\.METRE\.\)/);
+    assert.match(text, /COLOUR_RGB/);
   });
 }

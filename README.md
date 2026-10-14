@@ -34,10 +34,13 @@ Then open http://localhost:5173. Open or drop an `.ork`, and the parts appear in
   result against your file, and **Make these changes** puts them into the design (see
   [Comparing with a part made in CAD](#comparing-with-a-part-made-in-cad)).
 - **Downloads:**
-  - **STL:** the selected part, ready for the slicer. It holds one copy; a fin set's file is one
-    fin, and its name says how many to print.
-  - **STEP:** the selected part with exact surfaces (every copy in its place), to edit in Onshape.
-  - **Download all parts:** a zip with an STL for every part and a report.
+  - **STL for printing:** a zip with an STL for every part, ready for the slicer, and a report.
+    Each STL holds one copy; a fin set's file is one fin, and its name says how many to print.
+  - **STEP for Onshape:** the whole rocket in one STEP file. Every part (every fin too) is a
+    separate, named piece with exact curved surfaces, in its place, so in Onshape each part is
+    listed on its own and measures exactly. An STL can't do that: it's only triangles, so Onshape
+    shows it as one lump of mesh ("Import 1") without exact sizes.
+  - **STL / STEP** with a selected part: just that part.
   - **Save .ork:** your design with the details written into each part's comment. OpenRocket opens
     it as usual.
 
@@ -61,11 +64,11 @@ That writes `out/my-rocket/`:
 Every part is in its place on the rocket: the rocket's axis is Z and the nose tip is at Z = the
 rocket's length, as in OpenRocket's own OBJ export. Slicers move parts onto the bed by themselves.
 
-**Onshape:** Onshape imports an STL as a mesh, which you can look at and measure but not edit like a
-solid. To edit parts there, add `--step` (`npm run export -- my-rocket.ork --step`): that also
-writes a STEP file per part with every copy in place and exact curved surfaces, and
-`assembly.step` with the whole rocket. In a document, **+ → Import** and pick the STEP files;
-each becomes its own tab.
+**Onshape:** use STEP, not STL: Onshape imports an STL as one mesh, without separate parts or
+exact sizes. Add `--step` (`npm run export -- my-rocket.ork --step`) for `assembly.step`, the
+whole rocket as an assembly with every part a separate named piece with exact curved surfaces, in
+its place (the same file as the website's **STEP for Onshape**), and a STEP file per part. In an
+Onshape document, **+ → Import** and pick the file.
 
 ## Comparing with a part made in CAD
 
@@ -231,7 +234,8 @@ and on any designs of your own in `test/private/fixtures/`, a folder git ignores
 - **STL files:** every one is a closed surface (each edge joins exactly two triangles, facing
   opposite ways), its corners lie on the exact surface (to 0.0001 mm), and its volume is within
   what the 0.01 mm triangle allowance can change (0.01–0.07% for nose cones).
-- **STEP files:** every file re-imports with the same volume, number of solids and position.
+- **STEP files:** every file re-imports with the same volume, number of solids and position, and
+  the whole-rocket file is an assembly of named parts, one per piece, in millimetres.
 - **Details:**
   - Side holes through a curved nose cone wall remove exactly the material worked out by
     integration, and end holes through a cap or bulkhead exactly their volume.

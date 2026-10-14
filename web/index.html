@@ -14,7 +14,8 @@
       <div class="actions">
         <label class="button primary" for="file">Open .ork</label>
         <input id="file" type="file" accept=".ork" hidden />
-        <button id="zip" disabled title="An STL file for every part, ready for your slicer, and a report">Download all parts</button>
+        <button id="zip" disabled title="A zip with an STL file for every part, ready for your slicer, and a report">STL for printing</button>
+        <button id="onshape" disabled title="One STEP file with the whole rocket: every part separate and named, with exact sizes, in its place. Import it into Onshape.">STEP for Onshape</button>
         <button id="save" disabled title="Your design with the details you edited here saved into each part's comment">Save .ork</button>
       </div>
       <p id="status" role="status" aria-live="polite"></p>
@@ -37,7 +38,7 @@
           <h1>Drop an OpenRocket design here</h1>
           <p>
             Or use <strong>Open .ork</strong>. Every part comes out as exact CAD: real curves, not the triangles OpenRocket
-            exports. Download STL files for your slicer, or STEP files to edit a part in Onshape.
+            exports. Download STL files for your slicer, or one STEP file for Onshape with every part separate and its exact sizes.
           </p>
           <p class="muted">Your file never leaves this computer: everything runs in this page.</p>
         </div>
