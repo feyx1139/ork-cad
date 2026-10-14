@@ -5,9 +5,11 @@ import { makeCylinder, type Shape3D } from "replicad";
 import type { Instance, Part, RocketModel } from "../ork/model.ts";
 import { FeatureError, type EndHoles, type SideHoles } from "./parse.ts";
 import { hasShoulder, outerRadiusAt, partSpan, sideHolePosition } from "./part-shape.ts";
+import { PRINTED } from "../export/colors.ts";
 
-/** Holes narrower than this (mm) tend to close up when 3D printed. */
+/** Holes narrower than this (mm) tend to close up when 3D printed; sideways ones (side holes) sooner. */
 const SMALL_HOLE = 1;
+const SMALL_SIDE_HOLE = 1.5;
 /** How far (mm) the cutting tools reach past the part, so they always cut clean through. */
 const MARGIN = 1;
 
@@ -27,8 +29,11 @@ export function sideHoleTools(part: Part, model: RocketModel, inst: Instance, f:
   if (f.count > 1 && 2 * outer(s) * Math.sin(Math.PI / f.count) <= f.diameter) {
     throw new FeatureError(`${f.count} holes of ${fmt(f.diameter)} mm don't fit around the part without overlapping`);
   }
-  if (f.diameter < SMALL_HOLE) {
-    warnings.push(`${part.name}: ${fmt(f.diameter)} mm holes may close up when printed; drill them out afterwards.`);
+  if (f.diameter < SMALL_SIDE_HOLE && PRINTED.test(part.node?.fields.get("material")?.text ?? "")) {
+    warnings.push(
+      `${part.name}: ${fmt(f.diameter)} mm holes come out smaller than drawn, or closed, when printed running sideways; ` +
+        `drill them out to ${fmt(f.diameter)} mm afterwards.`,
+    );
   }
   if (
     part.kind === "transition" &&

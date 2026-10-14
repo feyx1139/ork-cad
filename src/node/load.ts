@@ -7,18 +7,22 @@ import { readOrk, type XmlDocument } from "../ork/read.ts";
 import { buildModel, type RocketModel } from "../ork/model.ts";
 import type { XmlTools } from "../ork/write.ts";
 import { initOpenCascade } from "../geometry/oc.ts";
+import { addAutoDetails } from "../features/auto.ts";
 
 export const xmlTools: XmlTools = {
   parse: (xml) => new DOMParser().parseFromString(xml, "text/xml") as unknown as Document,
   serialize: (doc) => new XMLSerializer().serializeToString(doc as never),
 };
 
-export function modelFromBytes(bytes: Uint8Array): RocketModel {
-  return buildModel(readOrk(bytes, (xml) => xmlTools.parse(xml) as unknown as XmlDocument));
+/** auto: add the details ork-cad works out by itself (src/features/auto.ts), as the website and export do. */
+export function modelFromBytes(bytes: Uint8Array, options: { auto?: boolean } = {}): RocketModel {
+  const model = buildModel(readOrk(bytes, (xml) => xmlTools.parse(xml) as unknown as XmlDocument));
+  if (options.auto) addAutoDetails(model);
+  return model;
 }
 
-export async function loadOrkFile(path: string): Promise<RocketModel> {
-  return modelFromBytes(new Uint8Array(await readFile(path)));
+export async function loadOrkFile(path: string, options: { auto?: boolean } = {}): Promise<RocketModel> {
+  return modelFromBytes(new Uint8Array(await readFile(path)), options);
 }
 
 export async function initOpenCascadeNode(): Promise<void> {

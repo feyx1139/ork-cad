@@ -97,6 +97,34 @@ test("detail lines: pockets, nut traps, chamfers and rounds", () => {
   }
 });
 
+test("a pocket's rounded mouth, and @auto lines turning automatic details off", () => {
+  const [mouth] = parseFeatures("@pocket size=21x21 depth=50 round=4").features;
+  assert.ok(mouth.kind === "pocket" && mouth.round === 4);
+  const [sharp] = parseFeatures("@pocket diameter=21 depth=50").features;
+  assert.ok(sharp.kind === "pocket" && sharp.round === 0);
+
+  const all = { pocket: true, vents: true, "nut-trap": true, edges: true };
+  assert.deepEqual(parseFeatures("Printed in PLA.").auto, all);
+  assert.deepEqual(parseFeatures("@auto off").auto, { pocket: false, vents: false, "nut-trap": false, edges: false });
+  assert.deepEqual(parseFeatures("@auto vents=off EDGES=no").auto, { ...all, vents: false, edges: false });
+  // Later ones win, and the lines aren't details themselves.
+  const mixed = parseFeatures("@auto off\n@side-holes count=4 diameter=1 at=5\n@auto pocket=on");
+  assert.deepEqual(mixed.auto, { pocket: true, vents: false, "nut-trap": false, edges: false });
+  assert.deepEqual(mixed.features.map((f) => f.kind), ["side-holes"]);
+
+  const bad = [
+    ["@auto", /say what to turn off/],
+    ["@auto holes=off", /unknown automatic detail "holes"/],
+    ["@auto vents=maybe", /vents must be on or off/],
+    ["@pocket diameter=21 depth=50 round=-1", /round can't be negative/],
+  ] as const;
+  for (const [line, message] of bad) {
+    const r = parseFeatures(line);
+    assert.equal(r.errors.length, 1, line);
+    assert.match(r.errors[0], message, line);
+  }
+});
+
 test("a chamfer can be given by how far in it cuts at the end", () => {
   const [c] = parseFeatures("@chamfer end=aft inset=2 angle=30 round=3").features;
   // The round turns in 3 (1 - cos 30); the straight part covers the rest of the 2 mm at 30 degrees.

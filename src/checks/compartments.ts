@@ -98,7 +98,7 @@ export function findCompartments(model: RocketModel): CompartmentReport {
           }
           at(x).vents.push(`${p.name}: ${f.count} x ${round(f.diameter)} mm`);
         }
-      } else {
+      } else if (f.kind === "end-holes") {
         // End holes join the spaces on either side of the cap, bulkhead or ring they go through.
         const label = p.kind === "transition" ? `${p.name} (${endOf(p, f.end)} cap)` : p.name;
         for (const inst of p.instances) {
@@ -323,7 +323,7 @@ function airSpace(model: RocketModel, parts: Part[], from: number, to: number): 
   return { volume, diameter: 2 * rMax };
 }
 
-function isAltimeter(p: Part): boolean {
+export function isAltimeter(p: Part): boolean {
   const type = p.node?.fields.get("masscomponenttype")?.text;
   return type === "altimeter" || type === "flightcomputer" || /altimeter|flight\s*computer/i.test(p.name);
 }

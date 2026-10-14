@@ -3,17 +3,26 @@
 //
 //   @side-holes count=4 diameter=2 at=10
 //   @end-holes count=4 diameter=3 radius=12 end=fore
-//   @pocket size=24x18 depth=40 corner=4 end=fore
+//   @pocket size=24x18 depth=40 corner=4 end=fore round=3
 //   @nut-trap size=M5 depth=12 end=aft
 //   @chamfer end=aft length=6 angle=30 round=3
 //   @round end=fore radius=3
+//   @auto vents=off           (ork-cad's automatic details, see auto.ts; "@auto off" for none)
 //
 // Lengths are millimetres unless a unit is given (2.5mm, 0.3cm, 0.1in, 1/8in); angles are degrees.
 // Angles around the rocket are measured like OpenRocket's own, so 0 lines up with the first fin.
 
 import { NUT_NAMES, NUT_ROOM, nutSize } from "./hardware.ts";
 
-export interface SideHoles {
+/** What every detail has: its line, and why ork-cad added it if it wasn't written in (auto.ts). */
+interface FeatureBase {
+  /** The comment line, for messages. */
+  source: string;
+  /** Set on details ork-cad adds by itself: why it added this one. */
+  auto?: string;
+}
+
+export interface SideHoles extends FeatureBase {
   kind: "side-holes";
   count: number;
   diameter: number;
@@ -22,12 +31,10 @@ export interface SideHoles {
   from: "fore" | "aft" | "middle";
   /** Angle of the first hole, radians; the rest are spread evenly around. */
   angle: number;
-  /** The comment line, for messages. */
-  source: string;
 }
 
 /** Holes along the rocket axis, through a cap, bulkhead or ring. */
-export interface EndHoles {
+export interface EndHoles extends FeatureBase {
   kind: "end-holes";
   count: number;
   diameter: number;
@@ -36,22 +43,22 @@ export interface EndHoles {
   /** Which end's cap, for nose cones and transitions; undefined means the only capped one. */
   end?: "fore" | "aft";
   angle: number;
-  source: string;
 }
 
 /** A cavity cut into a solid part from one end, along the axis (e.g. an altimeter pocket). */
-export interface Pocket {
+export interface Pocket extends FeatureBase {
   kind: "pocket";
   shape: { kind: "rect"; width: number; height: number; corner: number } | { kind: "round"; diameter: number };
   depth: number;
   end: "fore" | "aft";
   /** Turns the pocket around the axis, radians (the width runs along angle 0). */
   angle: number;
-  source: string;
+  /** Rounds the edge of the pocket's mouth with this radius, mm (0 = sharp): a lead-in for what goes in. */
+  round: number;
 }
 
 /** A hex nut held inside a solid part, put in through a slot from the side, with a screw hole along the axis. */
-export interface NutTrap {
+export interface NutTrap extends FeatureBase {
   kind: "nut-trap";
   size: string;
   /** Screw clearance hole diameter, nut pocket width across the flats and pocket thickness, mm. */
@@ -65,11 +72,10 @@ export interface NutTrap {
   end: "fore" | "aft";
   /** Direction the slot for putting the nut in opens toward, radians. */
   angle: number;
-  source: string;
 }
 
 /** A chamfer on the outside edge at an end, e.g. a lead-in so a shoulder slides into a tube. */
-export interface Chamfer {
+export interface Chamfer extends FeatureBase {
   kind: "chamfer";
   end: "fore" | "aft";
   /** How far along the axis the chamfer reaches, mm (worked out from `inset` when that's given). */
@@ -78,42 +84,56 @@ export interface Chamfer {
   angle: number;
   /** Rounds the start of the chamfer with this radius, mm (0 = sharp). */
   round: number;
-  source: string;
 }
 
 /** A rounded outside edge at an end. */
-export interface Round {
+export interface Round extends FeatureBase {
   kind: "round";
   end: "fore" | "aft";
   radius: number;
-  source: string;
 }
 
 export type Feature = SideHoles | EndHoles | Pocket | NutTrap | Chamfer | Round;
+
+/**
+ * The kinds of detail ork-cad can add by itself (see auto.ts). An "@auto" line turns them off or
+ * on: "@auto off", "@auto vents=off edges=off".
+ */
+export const AUTO_KINDS = ["pocket", "vents", "nut-trap", "edges"] as const;
+export type AutoKind = (typeof AUTO_KINDS)[number];
+export type AutoSettings = Record<AutoKind, boolean>;
 
 export class FeatureError extends Error {}
 
 const KEYS: Record<Feature["kind"], string[]> = {
   "side-holes": ["count", "diameter", "at", "from", "angle"],
   "end-holes": ["count", "diameter", "radius", "end", "angle"],
-  pocket: ["size", "diameter", "depth", "corner", "end", "angle"],
+  pocket: ["size", "diameter", "depth", "corner", "end", "angle", "round"],
   "nut-trap": ["size", "depth", "end", "angle", "bolt", "hole", "flats", "thickness"],
   chamfer: ["end", "length", "inset", "angle", "round"],
   round: ["end", "radius"],
 };
 
-/** Reads the "@" lines of a comment. Problems come back as messages naming the line. */
-export function parseFeatures(comment: string): { features: Feature[]; errors: string[] } {
+/**
+ * Reads the "@" lines of a comment: the details, and which automatic details are wanted ("@auto"
+ * lines; all of them unless a line turns some off). Problems come back as messages naming the line.
+ */
+export function parseFeatures(comment: string): { features: Feature[]; errors: string[]; auto: AutoSettings } {
   const features: Feature[] = [];
   const errors: string[] = [];
+  const auto = Object.fromEntries(AUTO_KINDS.map((k) => [k, true])) as AutoSettings;
   for (const raw of comment.split(/\r?\n/)) {
     const line = raw.trim();
     const m = /^@([a-z][a-z-]*)\b(.*)$/i.exec(line);
     if (!m) continue;
     const kind = m[1].toLowerCase() as Feature["kind"];
     try {
+      if (m[1].toLowerCase() === "auto") {
+        parseAuto(m[2], auto);
+        continue;
+      }
       if (!(kind in KEYS)) {
-        throw new FeatureError(`unknown detail "@${m[1]}" (known: ${Object.keys(KEYS).map((k) => `@${k}`).join(", ")})`);
+        throw new FeatureError(`unknown detail "@${m[1]}" (known: ${[...Object.keys(KEYS), "auto"].map((k) => `@${k}`).join(", ")})`);
       }
       features.push(PARSERS[kind](parseArgs(m[2], KEYS[kind]), line));
     } catch (e) {
@@ -121,7 +141,32 @@ export function parseFeatures(comment: string): { features: Feature[]; errors: s
       errors.push(`"${line}": ${e.message}`);
     }
   }
-  return { features, errors };
+  return { features, errors, auto };
+}
+
+/** "@auto off", "@auto on", "@auto vents=off edges=off": applied in order, so later ones win. */
+function parseAuto(text: string, auto: AutoSettings): void {
+  const tokens = text.split(/[\s,;]+/).filter(Boolean);
+  if (!tokens.length) throw new FeatureError(`say what to turn off, e.g. "@auto off" or "@auto vents=off" (${AUTO_KINDS.join(", ")})`);
+  for (const token of tokens) {
+    const eq = token.indexOf("=");
+    if (eq < 0) {
+      const on = onOff(token, "@auto");
+      for (const k of AUTO_KINDS) auto[k] = on;
+      continue;
+    }
+    const key = token.slice(0, eq).toLowerCase();
+    if (!(AUTO_KINDS as readonly string[]).includes(key)) {
+      throw new FeatureError(`unknown automatic detail "${key}" (use ${AUTO_KINDS.join(", ")})`);
+    }
+    auto[key as AutoKind] = onOff(token.slice(eq + 1), key);
+  }
+}
+
+function onOff(value: string, key: string): boolean {
+  if (/^(on|yes|true)$/i.test(value)) return true;
+  if (/^(off|no|false)$/i.test(value)) return false;
+  throw new FeatureError(`${key} must be on or off (not "${value}")`);
 }
 
 type Args = Map<string, string>;
@@ -171,12 +216,15 @@ const PARSERS: Record<Feature["kind"], (args: Args, source: string) => Feature> 
     } else {
       throw new FeatureError("give the pocket a size (WxH) or a diameter");
     }
+    const round = args.has("round") ? lengthArg(args, "round") : 0;
+    if (round < 0) throw new FeatureError("round can't be negative");
     return {
       kind: "pocket",
       shape,
       depth: positive(args, "depth"),
       end: choice(args, "end", ["fore", "aft"] as const, "fore"),
       angle: angleArg(args, "angle", 0),
+      round,
       source,
     };
   },

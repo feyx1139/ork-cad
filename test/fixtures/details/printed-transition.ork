@@ -1,0 +1,219 @@
+<?xml version='1.0' encoding='utf-8'?>
+<openrocket version="1.10" creator="OpenRocket 24.12">
+  <rocket>
+    <name>Printed transition</name>
+    <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0001</id>
+    <axialoffset method="absolute">0.0</axialoffset>
+    <position type="absolute">0.0</position>
+    <designtype>original</designtype>
+    <referencetype>maximum</referencetype>
+    <subcomponents>
+      <stage>
+        <name>Sustainer</name>
+        <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0002</id>
+        <subcomponents>
+          <nosecone>
+            <name>Nose cone</name>
+            <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0010</id>
+            <finish>normal</finish>
+            <material type="bulk" density="300.0" group="Custom">PLA 15% infill</material>
+            <length>0.11</length>
+            <thickness>filled</thickness>
+            <shape>ogive</shape>
+            <shapeparameter>1.0</shapeparameter>
+            <aftradius>0.0325</aftradius>
+            <aftshoulderradius>0.0319</aftshoulderradius>
+            <aftshoulderlength>0.045</aftshoulderlength>
+            <aftshoulderthickness>0.002</aftshoulderthickness>
+            <aftshouldercapped>false</aftshouldercapped>
+            <isflipped>false</isflipped>
+          </nosecone>
+          <bodytube>
+            <name>Payload tube</name>
+            <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0020</id>
+            <finish>normal</finish>
+            <material type="bulk" density="680.0" group="PaperProducts">Cardboard</material>
+            <length>0.3</length>
+            <thickness>5.0E-4</thickness>
+            <radius>0.0325</radius>
+            <subcomponents>
+              <masscomponent>
+                <name>Eggs</name>
+                <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0021</id>
+                <axialoffset method="top">0.07</axialoffset>
+                <position type="top">0.07</position>
+                <packedlength>0.12</packedlength>
+                <packedradius>0.025</packedradius>
+                <radialposition>0.0</radialposition>
+                <radialdirection>0.0</radialdirection>
+                <mass>0.13</mass>
+                <masscomponenttype>payload</masscomponenttype>
+              </masscomponent>
+              <launchlug>
+                <name>Launch lug</name>
+                <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0022</id>
+                <instancecount>1</instancecount>
+                <instanceseparation>0.0</instanceseparation>
+                <angleoffset method="relative">45.0</angleoffset>
+                <radialdirection>45.0</radialdirection>
+                <axialoffset method="top">0.15</axialoffset>
+                <position type="top">0.15</position>
+                <finish>normal</finish>
+                <material type="bulk" density="680.0" group="PaperProducts">Cardboard</material>
+                <radius>0.0035</radius>
+                <length>0.04</length>
+                <thickness>5.0E-4</thickness>
+              </launchlug>
+            </subcomponents>
+          </bodytube>
+          <transition>
+            <name>Altimeter band</name>
+            <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0030</id>
+            <finish>normal</finish>
+            <material type="bulk" density="300.0" group="Custom">PLA 15% infill</material>
+            <length>0.012</length>
+            <thickness>filled</thickness>
+            <shape>conical</shape>
+            <foreradius>0.0325</foreradius>
+            <aftradius>0.0325</aftradius>
+            <foreshoulderradius>0.0319</foreshoulderradius>
+            <foreshoulderlength>0.04</foreshoulderlength>
+            <foreshoulderthickness>0.002</foreshoulderthickness>
+            <foreshouldercapped>false</foreshouldercapped>
+            <aftshoulderradius>0.0319</aftshoulderradius>
+            <aftshoulderlength>0.035</aftshoulderlength>
+            <aftshoulderthickness>0.002</aftshoulderthickness>
+            <aftshouldercapped>false</aftshouldercapped>
+            <subcomponents>
+              <masscomponent>
+                <name>Altimeter</name>
+                <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0031</id>
+                <axialoffset method="top">-0.039</axialoffset>
+                <position type="top">-0.039</position>
+                <packedlength>0.036</packedlength>
+                <packedradius>0.008</packedradius>
+                <radialposition>0.0</radialposition>
+                <radialdirection>0.0</radialdirection>
+                <mass>0.008</mass>
+                <masscomponenttype>altimeter</masscomponenttype>
+              </masscomponent>
+            </subcomponents>
+          </transition>
+          <bodytube>
+            <name>Booster</name>
+            <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0040</id>
+            <finish>normal</finish>
+            <material type="bulk" density="680.0" group="PaperProducts">Cardboard</material>
+            <length>0.3</length>
+            <thickness>5.0E-4</thickness>
+            <radius>0.0325</radius>
+            <subcomponents>
+              <shockcord>
+                <name>Shock cord</name>
+                <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0041</id>
+                <axialoffset method="top">0.04</axialoffset>
+                <position type="top">0.04</position>
+                <packedlength>0.02</packedlength>
+                <packedradius>0.01</packedradius>
+                <radialposition>0.0</radialposition>
+                <radialdirection>0.0</radialdirection>
+                <cordlength>1.8</cordlength>
+                <material type="line" density="0.0025" group="Custom">Kevlar cord</material>
+              </shockcord>
+              <parachute>
+                <name>Parachute</name>
+                <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0042</id>
+                <axialoffset method="top">0.065</axialoffset>
+                <position type="top">0.065</position>
+                <packedlength>0.03</packedlength>
+                <packedradius>0.015</packedradius>
+                <radialposition>0.0</radialposition>
+                <radialdirection>0.0</radialdirection>
+                <cd>auto</cd>
+                <material type="surface" density="0.0235" group="Other">Polyethylene film</material>
+                <deployevent>ejection</deployevent>
+                <deployaltitude>200.0</deployaltitude>
+                <deploydelay>0.0</deploydelay>
+                <diameter>0.5</diameter>
+                <linecount>6</linecount>
+                <linelength>0.5</linelength>
+                <linematerial type="line" density="3.3E-4" group="Other">Carpet thread</linematerial>
+              </parachute>
+              <innertube>
+                <name>Motor mount</name>
+                <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0043</id>
+                <axialoffset method="bottom">0.0</axialoffset>
+                <position type="bottom">0.0</position>
+                <material type="bulk" density="680.0" group="PaperProducts">Cardboard</material>
+                <length>0.1</length>
+                <radialposition>0.0</radialposition>
+                <radialdirection>0.0</radialdirection>
+                <outerradius>0.0125</outerradius>
+                <thickness>5.0E-4</thickness>
+                <clusterconfiguration>single</clusterconfiguration>
+                <clusterscale>1.0</clusterscale>
+                <clusterrotation>0.0</clusterrotation>
+                <motormount>
+                  <ignitionevent>automatic</ignitionevent>
+                  <ignitiondelay>0.0</ignitiondelay>
+                  <overhang>0.0</overhang>
+                </motormount>
+              </innertube>
+              <centeringring>
+                <name>Top centering ring</name>
+                <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0044</id>
+                <instancecount>1</instancecount>
+                <instanceseparation>0.0</instanceseparation>
+                <axialoffset method="bottom">-0.095</axialoffset>
+                <position type="bottom">-0.095</position>
+                <material type="bulk" density="680.0" group="PaperProducts">Cardboard</material>
+                <length>0.003</length>
+                <radialposition>0.0</radialposition>
+                <radialdirection>0.0</radialdirection>
+                <outerradius>auto</outerradius>
+                <innerradius>auto</innerradius>
+              </centeringring>
+              <centeringring>
+                <name>Bottom centering ring</name>
+                <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0045</id>
+                <instancecount>1</instancecount>
+                <instanceseparation>0.0</instanceseparation>
+                <axialoffset method="bottom">0.0</axialoffset>
+                <position type="bottom">0.0</position>
+                <material type="bulk" density="680.0" group="PaperProducts">Cardboard</material>
+                <length>0.003</length>
+                <radialposition>0.0</radialposition>
+                <radialdirection>0.0</radialdirection>
+                <outerradius>auto</outerradius>
+                <innerradius>auto</innerradius>
+              </centeringring>
+              <trapezoidfinset>
+                <name>Fins</name>
+                <id>7c1e0f4a-5d2b-4e8a-9a61-3b7d2e5f0046</id>
+                <instancecount>4</instancecount>
+                <fincount>4</fincount>
+                <radiusoffset method="surface">0.0</radiusoffset>
+                <angleoffset method="relative">0.0</angleoffset>
+                <axialoffset method="bottom">0.0</axialoffset>
+                <position type="bottom">0.0</position>
+                <material type="bulk" density="630.0" group="Woods">Plywood (birch)</material>
+                <thickness>0.003</thickness>
+                <crosssection>square</crosssection>
+                <cant>0.0</cant>
+                <tabheight>0.0</tabheight>
+                <tablength>0.0</tablength>
+                <tabposition relativeto="front">0.0</tabposition>
+                <tabposition relativeto="top">0.0</tabposition>
+                <filletradius>0.0</filletradius>
+                <rootchord>0.08</rootchord>
+                <tipchord>0.04</tipchord>
+                <height>0.05</height>
+                <sweeplength>0.03</sweeplength>
+              </trapezoidfinset>
+            </subcomponents>
+          </bodytube>
+        </subcomponents>
+      </stage>
+    </subcomponents>
+  </rocket>
+</openrocket>

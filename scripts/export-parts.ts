@@ -1,8 +1,10 @@
 // Exports every part of an OpenRocket design as an STL file for printing, and reports the rocket's
 // sealed spaces (what is in each, which holes vent them).
 //
-//   npm run export -- <rocket.ork> [output folder] [--step]
+//   npm run export -- <rocket.ork> [output folder] [--step] [--no-auto]
 //
+// Parts get ork-cad's automatic details (altimeter vents and pocket, eyebolt nut trap, lead-ins on
+// shoulders; see src/features/auto.ts) unless --no-auto is given.
 // Each STL holds one copy of its part (a fin set's file is one fin; its name says how many to
 // print), in its place on the rocket. --step also writes exact STEP files for Onshape:
 // assembly.step with the whole rocket, every part a separate named component in its place, and a
@@ -17,13 +19,14 @@ import { initOpenCascadeNode, loadOrkFile } from "../src/node/load.ts";
 
 const args = process.argv.slice(2);
 const step = args.includes("--step");
-const [input, outArg] = args.filter((a) => a !== "--step");
+const auto = !args.includes("--no-auto");
+const [input, outArg] = args.filter((a) => a !== "--step" && a !== "--no-auto");
 if (!input) {
-  console.error("usage: npm run export -- <rocket.ork> [output folder] [--step]");
+  console.error("usage: npm run export -- <rocket.ork> [output folder] [--step] [--no-auto]");
   process.exit(2);
 }
 
-const model = await loadOrkFile(input);
+const model = await loadOrkFile(input, { auto });
 await initOpenCascadeNode();
 const outDir = outArg ?? path.join("out", safeFileName(path.basename(input, path.extname(input))));
 await mkdir(outDir, { recursive: true });
@@ -36,7 +39,13 @@ for (const p of result.parts) {
 if (result.assembly) await writeFile(path.join(outDir, "assembly.step"), result.assembly);
 const report = reportText(
   model,
-  result.parts.map((p) => ({ ...p, details: p.part.features.map((f) => f.source), errors: [] })),
+  result.parts.map((p) => ({
+    ...p,
+    details: p.part.features.filter((f) => !f.auto).map((f) => f.source),
+    auto: p.part.features.filter((f) => f.auto).map((f) => ({ line: f.source, why: f.auto! })),
+    autoNotes: p.part.autoNotes,
+    errors: [],
+  })),
   findCompartments(model),
 );
 await writeFile(path.join(outDir, "report.txt"), report);

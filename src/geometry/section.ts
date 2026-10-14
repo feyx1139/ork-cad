@@ -10,6 +10,7 @@ import {
   makeFace,
   makeLine,
   revolution,
+  type Face,
   type Shape3D,
 } from "replicad";
 import { at3, type Frame, type P2 } from "./frame.ts";
@@ -127,6 +128,17 @@ export function revolveSection(curves: Curve[], f: Frame): Shape3D {
     throw new Error("Internal error: cross-section isn't closed.");
   }
   return revolution(makeFace(assembleWire(edges)), [f.cx, f.cy, 0], [0, 0, 1]);
+}
+
+/** A closed profile of lines and arcs as a flat face, with `place` putting each of its points in 3D. */
+export function profileFace(curves: Curve[], place: (p: P2) => [number, number, number]): Face {
+  const edges: Edge[] = [];
+  for (const c of curves) {
+    if (c.kind !== "line" && c.kind !== "arc") throw new Error(`Internal error: a ${c.kind} in a profile.`);
+    if (Math.hypot(c.b[0] - c.a[0], c.b[1] - c.a[1]) < EPS) continue;
+    edges.push(c.kind === "line" ? makeLine(place(c.a), place(c.b)) : arcEdge(place(c.a), place(c.m), place(c.b)));
+  }
+  return makeFace(assembleWire(edges));
 }
 
 /** A closed polygon as line curves. */

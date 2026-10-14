@@ -43,7 +43,8 @@ if (matching.length > 1) console.log(`(${matching.length} parts are called "${pa
 
 await initOpenCascadeNode();
 const cad = await readCad(new Uint8Array(await readFile(cadFile)), path.basename(cadFile));
-const result = matchPart(model, part as TransitionPart, cad, path.basename(cadFile), { flip, progress: (text) => console.log(text) });
+// npm run export adds ork-cad's automatic details, so the changes turn them off for this part.
+const result = matchPart(model, part as TransitionPart, cad, path.basename(cadFile), { flip, auto: true, progress: (text) => console.log(text) });
 console.log("\n" + matchText(result));
 if (output) {
   await writeFile(output, applyMatch(bytes, part as TransitionPart, result, xmlTools));

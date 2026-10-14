@@ -348,6 +348,46 @@ textarea {
   margin-top: 8px;
   flex-wrap: wrap;
 }
+.auto-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.auto-list li:not(.note) {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  align-items: start;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.auto-list code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.auto-buttons {
+  display: flex;
+  gap: 4px;
+}
+.auto-buttons button {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+.auto-list details {
+  grid-column: 1 / 3;
+  font-size: 12px;
+  color: var(--muted);
+}
+.auto-list summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+.auto-list details p {
+  margin: 4px 0 0;
+}
 .help pre {
   overflow-x: auto;
   padding: 8px;

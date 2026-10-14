@@ -174,6 +174,7 @@ function showPart(p: PartView): void {
     `${(p.volume / 1000).toFixed(1)} cm³`,
     massText(p),
     p.details ? `${p.details.split("\n").length} detail${p.details.includes("\n") ? "s" : ""}` : "",
+    p.auto.length ? `${p.auto.length} automatic` : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -208,10 +209,19 @@ $<HTMLInputElement>("only").addEventListener("change", (e) => viewer.setOnlySele
 
 const HELP = `@side-holes count=4 diameter=2 at=10
 @end-holes count=4 diameter=3 radius=12 end=fore
-@pocket size=24x18 depth=40 corner=4 end=fore
+@pocket size=24x18 depth=40 corner=4 end=fore round=3
 @nut-trap size=M5 depth=12 end=aft angle=90
 @chamfer end=aft length=6 angle=30 round=3
-@round end=fore radius=3`;
+@round end=fore radius=3
+@auto vents=off`;
+
+/** What turning each kind of automatic detail off means, for the button's tooltip. */
+const AUTO_NAMES: Record<string, string> = {
+  vents: "altimeter vents",
+  pocket: "altimeter pocket",
+  "nut-trap": "eyebolt nut trap",
+  edges: "lead-ins and rounded rims on the shoulders",
+};
 
 function showSelected(): void {
   const p = selected ? parts.get(selected) : undefined;
@@ -235,14 +245,23 @@ function showSelected(): void {
       <button id="apply" class="primary">Apply</button>
       <span class="muted">Ctrl+Enter</span>
     </div>
+    <section class="auto" hidden>
+      <h3>Automatic details</h3>
+      <p class="muted">ork-cad adds these by itself, from what's in the design. <em>Edit</em> copies one into the details
+      above, where your line takes its place; <em>Turn off</em> adds an <code>@auto</code> line.</p>
+      <ul class="auto-list"></ul>
+    </section>
     <details class="help">
       <summary>What can I write here?</summary>
       <pre></pre>
       <p>Lengths are mm unless you write <code>in</code> or <code>cm</code> (e.g. <code>1/8in</code>). Angles are degrees, and
       <code>angle=0</code> lines up with the first fin. <code>at</code> is measured from the fore end of the part's body;
       a negative <code>at</code> goes into its fore shoulder. A chamfer can be given by its <code>inset</code> (how far in
-      it cuts at the end face) instead of its <code>length</code>. Pockets and nut traps need the part to be solid: tick
-      <em>Filled</em> for it in OpenRocket. The details are saved into the part's comment when you save the .ork.</p>
+      it cuts at the end face) instead of its <code>length</code>, and a pocket's <code>round</code> rounds the edge of its
+      mouth. Pockets and nut traps need the part to be solid: tick <em>Filled</em> for it in OpenRocket. A line here
+      replaces the automatic detail of the same kind; <code>@auto off</code> turns them all off for this part, or one kind
+      at a time: <code>@auto vents=off</code>, <code>pocket=off</code>, <code>nut-trap=off</code>, <code>edges=off</code>.
+      The details are saved into the part's comment when you save the .ork.</p>
     </details>
     <h3>Download this part</h3>
     <div class="row">
@@ -294,6 +313,7 @@ function showSelected(): void {
   box.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void run();
   });
+  showAuto(p, box, run);
   for (const b of selectedEl.querySelectorAll<HTMLButtonElement>("button[data-format]")) {
     b.disabled = !p.mesh;
     b.addEventListener("click", () => void download({ type: "file", key: p.key, format: b.dataset.format as "stl" | "step" }, b));
@@ -307,6 +327,57 @@ function showSelected(): void {
   });
   const shown = matches.get(p.key);
   if (shown) showMatch(shown);
+}
+
+/** The selected part's automatic details: each with why it's there, to edit or turn off. */
+function showAuto(p: PartView, box: HTMLTextAreaElement, apply: () => Promise<void>): void {
+  const section = selectedEl.querySelector<HTMLElement>(".auto")!;
+  const list = section.querySelector("ul")!;
+  section.hidden = !p.auto.length && !p.autoNotes.length && !p.autoOff.length;
+  for (const a of p.auto) {
+    const li = document.createElement("li");
+    const line = document.createElement("code");
+    line.textContent = a.line;
+    const edit = document.createElement("button");
+    edit.textContent = "Edit";
+    edit.title = "Copy it into the details above to change it; your line takes its place";
+    edit.addEventListener("click", () => {
+      box.value = [box.value.trim(), a.line].filter(Boolean).join("\n");
+      box.focus();
+      setStatus("Change the line as you like, then Apply: it takes the place of the automatic one.");
+    });
+    const off = document.createElement("button");
+    off.textContent = "Turn off";
+    off.title = `Adds "@auto ${a.kind}=off": no automatic ${AUTO_NAMES[a.kind]} on this part`;
+    off.addEventListener("click", () => {
+      const lines = box.value.split(/\r?\n/).filter((l) => l.trim());
+      const i = lines.findIndex((l) => /^\s*@auto\b/i.test(l));
+      if (i >= 0) lines[i] = `${lines[i].trimEnd()} ${a.kind}=off`;
+      else lines.push(`@auto ${a.kind}=off`);
+      box.value = lines.join("\n");
+      void apply();
+    });
+    const buttons = document.createElement("span");
+    buttons.className = "auto-buttons";
+    buttons.append(edit, off);
+    const why = document.createElement("details");
+    why.innerHTML = "<summary>Why</summary><p></p>";
+    why.querySelector("p")!.textContent = a.why;
+    li.append(line, buttons, why);
+    list.append(li);
+  }
+  for (const text of p.autoNotes) {
+    const li = document.createElement("li");
+    li.className = "note";
+    li.textContent = text;
+    list.append(li);
+  }
+  if (p.autoOff.length) {
+    const li = document.createElement("li");
+    li.className = "note";
+    li.textContent = `Turned off for this part by the @auto line in its details: ${p.autoOff.map((k) => AUTO_NAMES[k]).join(", ")}.`;
+    list.append(li);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------

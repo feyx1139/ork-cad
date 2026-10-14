@@ -18,3 +18,7 @@ measured from the front, middle or bottom; fins shorter than OpenRocket's 50 mm 
 Each `.openrocket.json` and `.openrocket.obj` next to them is what OpenRocket itself computes for
 that design (positions, lengths, volumes, masses) and its OBJ export, made with
 `npm run reference` (see the main README).
+
+`details/printed-transition.ork` was also written for these tests: a small ARC-style rocket with a
+printed, solid transition band holding the altimeter, for the automatic details. It sits in its own
+folder because it isn't one of the rockets checked against OpenRocket's own numbers.

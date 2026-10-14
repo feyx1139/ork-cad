@@ -7,7 +7,8 @@ import { strToU8, zipSync } from "fflate";
 import { readOrk, type XmlDocument } from "../src/ork/read.ts";
 import { allParts, buildModel, type Part, type RocketModel, type TransitionPart } from "../src/ork/model.ts";
 import { setComment, type XmlTools } from "../src/ork/write.ts";
-import { FeatureError, parseFeatures } from "../src/features/parse.ts";
+import { AUTO_KINDS, FeatureError, parseFeatures, type AutoKind } from "../src/features/parse.ts";
+import { addAutoDetails } from "../src/features/auto.ts";
 import { buildPart } from "../src/geometry/parts.ts";
 import { solidVolume } from "../src/geometry/measure.ts";
 import { findCompartments } from "../src/checks/compartments.ts";
@@ -32,12 +33,26 @@ export interface PartMesh {
   edges: Float32Array;
 }
 
+/** A detail ork-cad added by itself (src/features/auto.ts). */
+export interface AutoDetail {
+  line: string;
+  /** Which "@auto" setting turns it off. */
+  kind: AutoKind;
+  why: string;
+}
+
 export interface PartView {
   key: string;
   name: string;
   type: string;
   /** The detail lines (@...) of its comment. The rest of the comment is kept as it is. */
   details: string;
+  /** Details ork-cad adds by itself, which a line of the same kind in `details` replaces. */
+  auto: AutoDetail[];
+  /** Why an automatic detail isn't there, e.g. the part would have to be solid. */
+  autoNotes: string[];
+  /** Automatic details the part's "@auto" lines turn off. */
+  autoOff: AutoKind[];
   material: string;
   density?: number;
   massOverride?: number;
@@ -86,6 +101,8 @@ const VIEW_MESH = { tolerance: 0.05, angularTolerance: 0.2 };
 export class Session {
   private solids = new Map<string, Shape3D[]>();
   private views = new Map<string, PartView>();
+  /** The details each part was last built with, to know which to rebuild when they change. */
+  private builtWith = new Map<string, string>();
   private edited = new Set<string>();
   private keys = new Map<Part, string>();
   private matches = new Map<string, MatchResult>();
@@ -110,10 +127,12 @@ export class Session {
   }
 
   private static read(bytes: Uint8Array, xml: XmlTools): RocketModel {
-    return buildModel(
+    const model = buildModel(
       readOrk(bytes, (text) => xml.parse(text) as unknown as XmlDocument),
       { keepDetailErrors: true },
     );
+    addAutoDetails(model);
+    return model;
   }
 
   private keyParts(): void {
@@ -162,9 +181,10 @@ export class Session {
       if (!(e instanceof Error)) throw e;
       errors.push(e.message);
       if (e instanceof FeatureError) {
-        // Show the part without its details rather than not at all.
+        // Show the part without the details written in (the automatic ones always fit) rather
+        // than not at all.
         const features = part.features;
-        part.features = [];
+        part.features = features.filter((f) => f.auto);
         try {
           ({ solids, warnings } = buildPart(part, this.model)!);
         } finally {
@@ -174,6 +194,7 @@ export class Session {
     }
     for (const old of this.solids.get(key) ?? []) old.delete();
     this.solids.set(key, solids);
+    this.builtWith.set(key, signature(part));
 
     const material = part.node?.fields.get("material");
     const density = Number(material?.attrs.density);
@@ -183,6 +204,9 @@ export class Session {
       name: part.name,
       type: part.type,
       details: detailLines(part.comment).join("\n"),
+      auto: part.features.filter((f) => f.auto).map((f) => ({ line: f.source, kind: autoKind(f.kind), why: f.auto! })),
+      autoNotes: part.autoNotes ?? [],
+      autoOff: AUTO_KINDS.filter((k) => part.autoSettings?.[k] === false),
       material: material?.text ?? "",
       density: Number.isFinite(density) ? density : undefined,
       massOverride: Number.isFinite(override) ? override * 1000 : undefined,
@@ -198,21 +222,25 @@ export class Session {
   }
 
   /**
-   * Replaces a part's detail lines and rebuilds it. Lines that don't start with "@" are kept in the
-   * comment as plain notes.
+   * Replaces a part's detail lines and rebuilds it, and any other part whose automatic details
+   * change because of it (vents move to wherever the altimeter's space now needs them, say). Lines
+   * that don't start with "@" are kept in the comment as plain notes. The edited part comes first.
    */
-  setDetails(key: string, details: string): PartView {
+  setDetails(key: string, details: string): PartView[] {
     const part = this.part(key);
     const lines = details.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const detail = lines.filter((l) => l.startsWith("@"));
     const stray = lines.filter((l) => !l.startsWith("@"));
     const notes = part.comment.split(/\r?\n/).filter((l) => !l.trim().startsWith("@"));
     part.comment = [...notes, ...stray, ...detail].join("\n").trim();
-    const { features, errors } = parseFeatures(detail.join("\n"));
+    const { features, errors, auto } = parseFeatures(detail.join("\n"));
     part.features = features;
+    part.autoSettings = auto;
     part.detailErrors = [...stray.map((l) => `"${l}" doesn't start with @, so it was kept as a plain note.`), ...errors];
     this.edited.add(key);
-    return this.build(part);
+    addAutoDetails(this.model);
+    const changed = this.parts.filter((p) => p !== part && this.builtWith.get(this.keyOf(p)) !== signature(p));
+    return [part, ...changed].map((p) => this.build(p));
   }
 
   spaces(): SpacesView {
@@ -284,7 +312,7 @@ export class Session {
     if (part.kind !== "transition") throw new Error(`Only nose cones and transitions can be compared with a CAD file so far.`);
     options.progress?.(`Reading ${fileName}…`);
     const cad = await readCad(bytes, fileName);
-    const result = matchPart(this.model, part, cad, fileName, options);
+    const result = matchPart(this.model, part, cad, fileName, { ...options, auto: true });
     this.matches.set(key, result);
     return { ...result, key, text: matchText(result) };
   }
@@ -302,6 +330,7 @@ export class Session {
     for (const list of this.solids.values()) for (const solid of list) solid.delete();
     this.solids.clear();
     this.views.clear();
+    this.builtWith.clear();
     this.edited.clear();
     this.matches.clear();
     this.bytes = bytes;
@@ -321,6 +350,15 @@ export class Session {
     }
     return { name: this.rocket.fileName, bytes };
   }
+}
+
+/** What a part's build depends on beyond its OpenRocket fields: its details, and its notes about them. */
+function signature(part: Part): string {
+  return JSON.stringify([part.features.map((f) => [f.source, f.auto ?? ""]), part.autoNotes ?? [], part.detailErrors]);
+}
+
+function autoKind(kind: string): AutoKind {
+  return kind === "side-holes" ? "vents" : kind === "chamfer" || kind === "round" ? "edges" : (kind as AutoKind);
 }
 
 export function detailLines(comment: string): string[] {

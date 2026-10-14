@@ -6,7 +6,9 @@ files stay on your computer).
 Turns OpenRocket designs (`.ork`) into parts ready for 3D printing: STL files made from exact CAD
 (real curves, cut into triangles within 0.01 mm), not the coarse mesh OpenRocket's own export
 makes, and exact STEP files for Onshape when you want to edit a part. Holes, pockets, nut traps and
-other print details that OpenRocket can't model are added from lines in each part's comment. A
+other print details that OpenRocket can't model are added from lines in each part's comment, and
+printed parts get the usual ones by themselves (altimeter vents and pocket, an eyebolt nut,
+lead-ins on the shoulders), each with the reason, to keep, change or turn off. A
 part you made in CAD yourself can be compared with the design, and the changes that make the design
 match it are worked out for you. The parts are checked against OpenRocket itself. It runs as a
 website and as a command-line tool, and both use the same code in `src/`.
@@ -28,6 +30,9 @@ Then open http://localhost:5173. Open or drop an `.ork`, and the parts appear in
 - **Sealed spaces:** show what's inside each space and which holes vent it.
 - **Clicking a part:** shows its details editor. Type detail lines (see below), press **Apply**, and
   the part rebuilds.
+- **Automatic details:** listed under a part's details, each with why it's there. **Edit** copies one
+  into the details to change it; **Turn off** turns that kind off for the part (see
+  [Automatic details](#automatic-details)).
 - **Cut in half:** shows walls, pockets and vents from the inside.
 - **Compare with your CAD file:** for a nose cone or transition, pick a STEP or STL file of the real
   part. The page lists what to change in OpenRocket and which detail lines to add, checks the
@@ -55,7 +60,8 @@ Pages.
 npm run export -- my-rocket.ork
 ```
 
-That writes `out/my-rocket/`:
+Parts get their [automatic details](#automatic-details); `--no-auto` leaves them off. That writes
+`out/my-rocket/`:
 - one STL file per part, numbered nose to tail (one copy of the part; a fin set's file is one fin,
   named with how many to print);
 - `report.txt` with each part's volume and its mass at the material set in OpenRocket, plus the
@@ -131,6 +137,8 @@ eyebolt, a lead-in on the aft shoulder and a rounded fore rim.
   - `depth`: how far in it goes.
   - `end`: which end it opens at (`fore` or `aft`; default `fore`).
   - `angle`: turns it around the axis.
+  - `round`: rounds the edge of its mouth with this radius (as a CAD fillet does), a lead-in for
+    what goes in.
 - **`@nut-trap`** holds a hex nut inside the part, so a screw or eyebolt can go in from the end
   along the axis (to anchor a shock cord, for example).
   - `size`: `M3`–`M6`, `#4-40`, `#6-32`, `#8-32`, `#10-24`, `#10-32` or `1/4-20`.
@@ -167,6 +175,62 @@ the input file. Lines that don't fit stop the export with the reason. For exampl
 run off the part, overlap each other, miss the cap, or sit outside the shoulder wall. Notes point
 out holes that another part covers once assembled (drill that part to match) and holes under 1 mm,
 which tend to close up when printed.
+
+## Automatic details
+
+ork-cad adds some details by itself, worked out from what's in the design, so printed parts come
+out ready to fly. They're worked out again every time (the `.ork` keeps only the lines you write),
+and the website and the report give the reason for each.
+
+- **Altimeter vents.** An altimeter works out its height from the air pressure, so the sealed space
+  it's in needs small holes to the outside (static ports) to keep its air at the outside pressure.
+  They go:
+  - four in one ring, 90° apart. The American Rocketry Challenge handbook (Appendix 9) says four is
+    best, never two, all the same size and evenly spaced in line around the tube, so wind from one
+    side, or the rocket swinging, averages out;
+  - sized for the air in the space. PerfectFlite's rule is one hole of 0.0016 × D² × L inches for a
+    D × L inch bay (0.0016 × 4V/π for V cubic inches), or four holes of half that size. They're at
+    least 0.02" (0.5 mm), the size the handbook gives for most ARC rockets; it warns that bigger
+    holes add wind noise, and a spike when the rocket separates that can spoil the apogee reading;
+  - on a straight, smooth part of the outside: a body tube, or the band of a transition that's the
+    same size at both ends (in its middle), never a taper, where the airflow changes the pressure.
+    Not where a shoulder or coupler is inside, 10 mm clear of joints, at least 4 body diameters
+    behind the nose cone (PerfectFlite: well away from the nose cone shoulder), and as near the
+    altimeter as that allows;
+  - turned so nothing sticking out of the rocket ahead of them (launch lug, rail buttons) is in line
+    with one, as the handbook asks, and after that away from the fins.
+
+  None are added when the space already has vents of your own, and `@auto vents=off` keeps them off
+  a part (they go to the next best place). Holes this small come out smaller, or closed, when
+  printed running sideways: drill them out to size afterwards.
+- **Altimeter pocket.** When OpenRocket has the altimeter inside a printed nose cone or transition
+  that's ticked **Filled**. The altimeter is a mass component of type Altimeter, or one named
+  "altimeter". The pocket is:
+  - square, 1 mm wider than the altimeter's diameter, so a box-shaped altimeter fits;
+  - 3 mm deeper than where the altimeter ends, and past the middle of a band so vents through the
+    band open into it;
+  - open at the end away from the motor's ejection charge, so the altimeter is sealed from the gas
+    and comes out after each flight for the official reading;
+  - rounded at its mouth (a fifth of its width, at most 4 mm) to guide the altimeter in.
+
+  When the part is hollow in OpenRocket, it says to tick Filled instead.
+- **Eyebolt nut.** When the shock cord sits next to an end of a printed nose cone or transition
+  that's ticked Filled: a captive nut for an M4 eyebolt, 12 mm in from the end. The screw goes in
+  along the axis, and the nut goes in through a slot in the side of the shoulder, which the tube
+  covers once the rocket is together. The nut can't turn or fall out, so the eyebolt can't work
+  loose.
+- **Lead-ins.** The free end of each shoulder of a printed nose cone or transition, so it slides
+  into its tube and centres itself. They go in by 5% of the shoulder's diameter, at most 4 mm (on a
+  hollow shoulder, at most half its wall).
+  - On the end the part is printed standing on (the wider one), a 30° chamfer blended in with a
+    round, which needs no support. A thin hollow shoulder gets a plain 45° chamfer.
+  - On the other end, a round.
+
+A line of the same kind written in the part's comment takes the place of the automatic one
+(`@chamfer` and `@round` for each end on its own). `@auto off` turns them all off for that part,
+or one kind at a time: `@auto vents=off`, `pocket=off`, `nut-trap=off`, `edges=off`. When
+comparing with a CAD file, the changes include `@auto off`, so the part comes out just like the
+file.
 
 **Sealed spaces.** The export lists the rocket's sealed spaces, nose to tail. For each one it shows:
 - where the space starts and ends (the caps, bulkheads and centering rings around it);
@@ -209,9 +273,10 @@ out as a separate piece (with a note).
 
 ## How it's checked
 
-`npm test` runs these checks on four of the example rockets that come with OpenRocket 24.12 and on
-a test rocket with one fin set for each way OpenRocket places a fin tab (all in `test/fixtures/`),
-and on any designs of your own in `test/private/fixtures/`, a folder git ignores.
+`npm test` runs these checks on four of the example rockets that come with OpenRocket 24.12, on
+a test rocket with one fin set for each way OpenRocket places a fin tab, and on a small ARC-style
+rocket with a printed transition holding the altimeter (all in `test/fixtures/`), and on any
+designs of your own in `test/private/fixtures/`, a folder git ignores.
 
 - **Positions:** every component sits exactly where OpenRocket puts it (all copies, to 0.000001 mm),
   and the rocket's length is OpenRocket's, which counts fins or a motor tube reaching past the
@@ -239,15 +304,22 @@ and on any designs of your own in `test/private/fixtures/`, a folder git ignores
 - **Details:**
   - Side holes through a curved nose cone wall remove exactly the material worked out by
     integration, and end holes through a cap or bulkhead exactly their volume.
-  - Pockets, a rounded rim, rounded lead-in chamfers (given by length or by inset) and a captive
-    nut (with its slot and screw hole) cut into the ARC example's solid balsa nose cone each remove
-    exactly the volume worked out by hand, and vents open into the pocket.
+  - Pockets (with sharp, rounded and rounded-mouth openings), a rounded rim, rounded lead-in
+    chamfers (given by length or by inset) and a captive nut (with its slot and screw hole) cut
+    into the ARC example's solid balsa nose cone each remove exactly the volume worked out by hand,
+    and vents open into the pocket.
   - Mistakes in detail lines are refused with a reason.
 - **Comparing with CAD files:** parts built with known changes (a longer, narrower shoulder with a
   rounded lead-in, side holes through a curved wall, pockets, a nut trap, a rounded rim, Filled),
   written as STEP and as STL, moved, turned, tilted and in inches, compared with the design: each
   time it finds exactly those changes again, the part built with them matches the file, and the
   design written with them builds the same part.
+- **Automatic details:** the ARC-style test rocket gets exactly the pocket, vents, eyebolt nut and
+  lead-ins worked out by hand. Its altimeter's space holds the air worked out by hand; the vents are
+  sized from that by PerfectFlite's rule, sit in the middle of the band, turn away from the launch
+  lug and, built, open into the pocket; the pocket's rounded mouth removes exactly the volume worked
+  out by hand. `@auto` lines and lines of your own turn them off or take their place, and a hollow
+  transition gets lead-ins sized for its wall and a note to tick Filled.
 - **Sealed spaces:** the ARC example's spaces, with an altimeter in its payload bay: the vent
   warning, the vents, ejection gas through a bulkhead, and the air volume.
 - **Edited files:** `.ork` files change only the comment, and OpenRocket itself opens them and reads
@@ -292,8 +364,9 @@ Found while building the tests:
 - `src/geometry/shapes.ts`: OpenRocket's nose and transition formulas, ported line for line.
 - `src/geometry/parts.ts`: builds the solids with replicad (OpenCASCADE compiled to WebAssembly,
   so the same code runs in the browser).
-- `src/features/`: reads the `@` detail lines (`parse.ts`, screw sizes in `hardware.ts`) and cuts
-  them (`holes.ts`, `cuts.ts`; `apply.ts` runs them all).
+- `src/features/`: reads the `@` detail lines (`parse.ts`, screw sizes in `hardware.ts`), works
+  out the automatic ones (`auto.ts`), and cuts them (`holes.ts`, `cuts.ts`; `apply.ts` runs them
+  all).
 - `src/checks/compartments.ts`: the sealed spaces and the vent checks.
 - `src/ork/write.ts`: writes a component comment back into an `.ork`.
 - `src/export/files.ts`, `report.ts`: write the STL and STEP files and the report

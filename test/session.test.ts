@@ -55,7 +55,11 @@ test("opening the example builds and meshes every part", () => {
   const [nose, paper, finCan] = views;
   const model = modelFromBytes(new Uint8Array(readFileSync(fixture(FILE))));
   const exact = wallVolume(allParts(model).find((p) => p.name === nose.name) as TransitionPart)!;
-  assert.ok(nose.printed && nose.density === 1250 && Math.abs(nose.volume / exact - 1) < 1e-7, `${nose.volume} vs ${exact}`);
+  // The printed nose cone gets a lead-in on its shoulder by itself: a 45 degree chamfer 1.1 mm in
+  // (5% of the 23.9 mm shoulder, which is also half its 2.2 mm wall), a triangle turned around the axis.
+  assert.deepEqual(nose.auto.map((a) => a.line), ["@chamfer end=aft inset=1.1 angle=45"]);
+  const chamfer = 2 * Math.PI * (11.95 - 1.1 / 3) * (1.1 ** 2 / 2);
+  assert.ok(nose.printed && nose.density === 1250 && Math.abs(nose.volume / (exact - chamfer) - 1) < 1e-7, `${nose.volume} vs ${exact - chamfer}`);
   assert.ok(!paper.printed, "the paper tube isn't printed");
   assert.ok(finCan.printed);
   assert.equal(views[4].copies, 3);
@@ -64,21 +68,21 @@ test("opening the example builds and meshes every part", () => {
 test("editing details rebuilds the part, keeps notes, and reports problems", () => {
   const { session, views, key } = open();
   const before = views.find((v) => v.name === "Printable nose cone")!.volume;
-  const holed = session.setDetails(key("Printable nose cone"), HOLES);
+  const [holed] = session.setDetails(key("Printable nose cone"), HOLES);
   assert.ok(holed.volume < before && before - holed.volume > 10, "holes removed material");
   assert.equal(holed.details, HOLES);
   assert.ok(session.hasEdits);
 
-  const typo = session.setDetails(key("Printable nose cone"), "@side-holes count=3 diam=2 at=60");
+  const [typo] = session.setDetails(key("Printable nose cone"), "@side-holes count=3 diam=2 at=60");
   assert.match(typo.errors.join("\n"), /unknown setting "diam"/);
   assert.ok(typo.mesh, "still shown");
 
-  const needsSolid = session.setDetails(key("Printable nose cone"), "@pocket size=10x8 depth=20 end=aft");
+  const [needsSolid] = session.setDetails(key("Printable nose cone"), "@pocket size=10x8 depth=20 end=aft");
   assert.match(needsSolid.errors.join("\n"), /tick "Filled"/);
-  assert.ok(needsSolid.mesh && Math.abs(needsSolid.volume - before) < 1e-6, "shown without the detail");
+  assert.ok(needsSolid.mesh && Math.abs(needsSolid.volume - before) < 1e-6, "shown without the detail, with the automatic one");
 
   // The centering ring's comment has a note; a line without @ is kept as one too.
-  const ring = session.setDetails(key("Centering ring"), "drill by hand\n@end-holes count=3 diameter=0.5 radius=11.2");
+  const [ring] = session.setDetails(key("Centering ring"), "drill by hand\n@end-holes count=3 diameter=0.5 radius=11.2");
   assert.match(ring.errors.join("\n"), /doesn't start with @/);
   const comment = session.part(key("Centering ring")).comment;
   assert.ok(comment.startsWith("The centering ring automatically") && comment.includes("drill by hand"), comment);
@@ -155,7 +159,8 @@ test("comparing the nose cone with an STL of the real one, and taking on its cha
   )!.solids[0];
   const m = await session.compare(key("Printable nose cone"), stlOf(real, "nose"), "nose.stl");
   assert.deepEqual(m.changes.map((c) => [c.field, c.from, c.to]), [["aftshoulderlength", "20 mm", "25 mm"]]);
-  assert.deepEqual(m.added, [lines]);
+  // "@auto off": the real one has no lead-in, so ork-cad mustn't add its own.
+  assert.deepEqual(m.added, [lines, "@auto off"]);
   assert.deepEqual(m.check.differences, []);
   assert.match(m.text, /Aft shoulder length: 20 mm → 25 mm/);
 
@@ -163,8 +168,9 @@ test("comparing the nose cone with an STL of the real one, and taking on its cha
   assert.ok(session.hasEdits);
   const views = session.buildAll();
   const now = views.find((v) => v.name === "Printable nose cone")!;
-  assert.equal(now.details, lines);
+  assert.equal(now.details, `${lines}\n@auto off`);
+  assert.deepEqual(now.auto, []);
   assert.ok(Math.abs(now.volume / solidVolume(real) - 1) < 1e-9, `${now.volume} vs ${solidVolume(real)}`);
   const saved = allParts(modelFromBytes(session.saveOrk().bytes)).find((p) => p.name === "Printable nose cone") as TransitionPart;
-  assert.ok(Math.abs(saved.aftShoulder.length - 25) < 1e-9 && saved.comment === lines);
+  assert.ok(Math.abs(saved.aftShoulder.length - 25) < 1e-9 && saved.comment === `${lines}\n@auto off`);
 });

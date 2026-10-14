@@ -47,7 +47,8 @@ async function handle(req: Request): Promise<void> {
         break;
       }
       case "setDetails": {
-        sendPart(need(session).setDetails(req.key, req.details));
+        // The edited part, and any whose automatic details changed with it.
+        for (const part of need(session).setDetails(req.key, req.details)) sendPart(part);
         post({ type: "spaces", spaces: need(session).spaces() });
         break;
       }

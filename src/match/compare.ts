@@ -68,6 +68,11 @@ export interface MatchOptions {
   /** Take the other end of the file's part as its fore end. */
   flip?: boolean;
   progress?: (text: string) => void;
+  /**
+   * The design is built with ork-cad's automatic details (src/features/auto.ts): the changes then
+   * include "@auto off", so none are added to this part and it comes out just like the file.
+   */
+  auto?: boolean;
 }
 
 export function matchPart(model: RocketModel, part: TransitionPart, cad: CadPart, file: string, options: MatchOptions = {}): MatchResult {
@@ -216,9 +221,11 @@ export function matchPart(model: RocketModel, part: TransitionPart, cad: CadPart
     ...(solid ? endCuts(mesh, placed, outsideAt, steps, faceTolerance, "aft", back, shape.all[shape.all.length - 1].r) : []),
   ];
 
-  // --- The part's own detail lines stay, except edge shapes for the ends the file shows.
+  // --- The part's own detail lines stay, except edge shapes for the ends the file shows (and its
+  // "@auto" lines, when "@auto off" takes their place).
   const own = part.comment.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith("@"));
   const replaced = own.filter((l) => {
+    if (options.auto && /^@auto\b/i.test(l)) return true;
     const m = /^@(chamfer|round)\b.*\bend=(fore|aft)\b/i.exec(l);
     return m !== null && shape[m[2] as "fore" | "aft"] !== undefined;
   });
@@ -239,6 +246,12 @@ export function matchPart(model: RocketModel, part: TransitionPart, cad: CadPart
       } catch (e) {
         notes.push(`Found ${line}, but it can't be made: ${e instanceof Error ? e.message : String(e)}`);
       }
+    }
+  }
+  if (options.auto) {
+    details.push("@auto off");
+    if (!own.includes("@auto off")) {
+      notes.push(`"@auto off" keeps ork-cad from adding its automatic details (vents, pocket, nut trap, rounded edges) to this part, so it comes out just like the file.`);
     }
   }
   progress("Comparing the surfaces…");

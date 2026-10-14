@@ -6,7 +6,9 @@ import { before, test } from "node:test";
 import assert from "node:assert/strict";
 import { DistanceQuery, makeCompound, makeVertex, type Shape3D } from "replicad";
 import { allParts, type RocketModel, type TransitionPart } from "../src/ork/model.ts";
-import { parseFeatures } from "../src/features/parse.ts";
+import { parseFeatures, type Pocket } from "../src/features/parse.ts";
+import { mouthPieces } from "../src/features/cuts.ts";
+import { endFace } from "../src/features/part-shape.ts";
 import { buildPart } from "../src/geometry/parts.ts";
 import { solidVolume } from "../src/geometry/measure.ts";
 import { initOpenCascadeNode, loadOrkFile } from "../src/node/load.ts";
@@ -83,6 +85,32 @@ test("a chamfer given by its inset leaves an end face that much smaller", () => 
   const h = (r1 - r2) / Math.tan(th); // the straight part's length along the axis
   const underLine = (Math.PI * h * (r1 ** 2 + r1 * r2 + r2 ** 2)) / 3;
   close(removed(["@chamfer end=aft inset=4 angle=45 round=5"]), Math.PI * R ** 2 * (a + h) - underRound - underLine);
+});
+
+test("a pocket's rounded mouth", () => {
+  // What the round takes off one edge: a corner square minus a quarter circle, area A, its centre
+  // of area ubar from the edge. Along straight walls that's A per mm; around a rounded corner of
+  // radius c it's turned a quarter turn at c + ubar (Pappus); at a sharp corner the two walls'
+  // rounds run on into each other as a CAD fillet's do, adding the integral of the square of how
+  // far in they cut, (5/3 - pi/2) rho^3 per corner.
+  const A = (r: number) => r ** 2 * (1 - Math.PI / 4);
+  const ubar = (r: number) => (r * (10 - 3 * Math.PI)) / (3 * (4 - Math.PI));
+  const miter = (r: number) => (5 / 3 - Math.PI / 2) * r ** 3;
+  close(removed(["@pocket size=24x18 depth=25 end=aft round=3"]), 24 * 18 * 25 + A(3) * 2 * (24 + 18) + 4 * miter(3), 1e-9);
+  close(
+    removed(["@pocket size=24x18 depth=25 corner=4 end=aft round=3"]),
+    (24 * 18 - (4 - Math.PI) * 4 ** 2) * 25 + A(3) * (2 * (24 + 18) - 8 * 4) + 2 * Math.PI * A(3) * (4 + ubar(3)),
+  );
+  close(removed(["@pocket diameter=20 depth=30 end=aft round=2"]), Math.PI * 10 ** 2 * 30 + 2 * Math.PI * A(2) * (10 + ubar(2)));
+  close(removed(["@pocket size=24x18 depth=25 end=aft round=3 angle=30"]), 24 * 18 * 25 + A(3) * 2 * (24 + 18) + 4 * miter(3), 1e-9);
+
+  // If OpenCASCADE can't fillet the mouth, the opening is flared by the same round instead, built
+  // piece by piece: the same along the walls, but turned around each sharp corner, not creased.
+  const f = parseFeatures("@pocket size=24x18 depth=25 end=aft round=3").features[0] as Pocket;
+  const inst = nose.instances[0];
+  const pocketed = plain - removed([f.source.replace(" round=3", "")]);
+  const flared = mouthPieces(model, inst, f, endFace(nose, "aft")).reduce((s, p) => s.cut(p), solid([f.source.replace(" round=3", "")]));
+  close(pocketed - solidVolume(flared), A(3) * (2 * (24 + 18) + 2 * Math.PI * ubar(3)));
 });
 
 test("a captive M4 nut, the slot it slides in through, and the screw hole", () => {

@@ -4,7 +4,7 @@
 // and an angle of 0 points along +y, increasing toward +z.
 
 import { attributesOf, childElements, type OrkField, type OrkFile, type OrkNode } from "./read.ts";
-import { FeatureError, parseFeatures, type Feature } from "../features/parse.ts";
+import { FeatureError, parseFeatures, type AutoSettings, type Feature } from "../features/parse.ts";
 import { transitionRadius } from "../geometry/shapes.ts";
 
 export type ShapeType = "conical" | "ogive" | "ellipsoid" | "power" | "parabolic" | "haack";
@@ -30,10 +30,17 @@ interface PartBase {
   length: number;
   instances: Instance[];
   children: Part[];
-  /** Details from the component's comment (holes...), see src/features/parse.ts. */
+  /**
+   * Details from the component's comment (holes...), see src/features/parse.ts, and the ones
+   * ork-cad adds by itself (src/features/auto.ts), which have `auto` set.
+   */
   features: Feature[];
   /** Comment lines that look like details but couldn't be read (only kept with keepDetailErrors). */
   detailErrors: string[];
+  /** Which automatic details the comment's "@auto" lines leave on (all when there are none). */
+  autoSettings?: AutoSettings;
+  /** Why an automatic detail isn't there, e.g. the part would have to be solid. */
+  autoNotes?: string[];
   node: OrkNode;
 }
 
@@ -184,9 +191,10 @@ export function buildModel(file: OrkFile, options: { keepDetailErrors?: boolean 
   model.length = rocketLength(model);
   const problems: string[] = [];
   for (const part of allParts(model)) {
-    const { features, errors } = parseFeatures(part.comment);
+    const { features, errors, auto } = parseFeatures(part.comment);
     part.features = features;
     part.detailErrors = errors;
+    part.autoSettings = auto;
     problems.push(...errors.map((e) => `${part.name}: ${e}`));
   }
   if (problems.length && !options.keepDetailErrors) {

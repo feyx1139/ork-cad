@@ -1,5 +1,6 @@
 // The plain-text summary that goes with exported parts: each part's volume and mass, its details
-// and notes, and the rocket's sealed spaces with their warnings.
+// (the automatic ones with why they were added) and notes, and the rocket's sealed spaces with
+// their warnings.
 
 import type { RocketModel } from "../ork/model.ts";
 import { round, type CompartmentReport } from "../checks/compartments.ts";
@@ -12,7 +13,12 @@ export interface ReportPart {
   volume: number;
   density?: number;
   massOverride?: number;
+  /** The detail lines written in its comment. */
   details: string[];
+  /** Details ork-cad added by itself, and why. */
+  auto?: { line: string; why: string }[];
+  /** Why an automatic detail isn't there. */
+  autoNotes?: string[];
   warnings: string[];
   errors: string[];
 }
@@ -25,6 +31,8 @@ export function reportText(model: RocketModel, parts: ReportPart[], spaces: Comp
     const each = p.copies > 1 ? `${(p.volume / p.copies / 1000).toFixed(2)} cm³ each, ${p.copies} = ` : "";
     lines.push(`  ${p.fileName}  ${each}${(p.volume / 1000).toFixed(2)} cm³${mass}${override}`);
     for (const d of p.details) lines.push(`    detail: ${d}`);
+    for (const a of p.auto ?? []) lines.push(`    automatic: ${a.line}`, `      (${a.why})`);
+    for (const n of p.autoNotes ?? []) lines.push(`    note: ${n}`);
     for (const e of p.errors) lines.push(`    PROBLEM: ${e}`);
     for (const w of p.warnings) lines.push(`    note: ${w}`);
   }
