@@ -21,6 +21,7 @@ import {
   type Shape3D,
 } from "replicad";
 import {
+  isFilled,
   UnsupportedError,
   type CylinderPart,
   type FinSetPart,
@@ -298,6 +299,7 @@ function innerProfile(o: Outer, L: number, w: number, warnings: string[], name: 
 
 function buildTransition(t: TransitionPart, f: Frame, warnings: string[]): Shape3D {
   const L = t.length;
+  const filled = isFilled(t);
   const o = outerProfile(t);
   // End radii as the profile actually reaches them. They equal the fore/aft radius except for
   // clipped shapes, where OpenRocket's clip search stops within 0.1 mm.
@@ -305,8 +307,8 @@ function buildTransition(t: TransitionPart, f: Frame, warnings: string[]): Shape
   const r2 = curveEnd(o.curve)[1];
   const section: Curve[] = [];
   // Fore end: from the axis up to the start of the outer profile.
-  const inner = t.filled || t.thickness <= 0 ? null : innerProfile(o, L, t.thickness, warnings, t.name);
-  if (!t.filled && t.thickness <= 0) {
+  const inner = filled || t.thickness <= 0 ? null : innerProfile(o, L, t.thickness, warnings, t.name);
+  if (!filled && t.thickness <= 0) {
     warnings.push(`${t.name}: wall thickness is 0, so it is built solid.`);
   }
   if (!inner) {
@@ -340,12 +342,12 @@ function buildTransition(t: TransitionPart, f: Frame, warnings: string[]): Shape
   for (const [sh, side] of shoulders) {
     const touches = side === "fore" ? r1 > 0 : r2 > 0;
     if (sh.length <= 0 || sh.radius <= 0 || !touches) continue;
-    if (!t.filled && sh.thickness <= 0) {
+    if (!filled && sh.thickness <= 0) {
       warnings.push(`${t.name}: ${side} shoulder has 0 mm walls, so it is left out (it can't be printed).`);
       continue;
     }
     const before = solid.solids.length;
-    solid = solid.fuse(revolveSection(shoulderSection(sh, side, L, t.filled), f));
+    solid = solid.fuse(revolveSection(shoulderSection(sh, side, L, filled), f));
     if (solid.solids.length > before) {
       warnings.push(
         `${t.name}: the ${side} shoulder doesn't touch the wall (it's narrower than the inside of the ${side} end), so it's a separate piece.`,
@@ -400,15 +402,7 @@ function buildFin(p: FinSetPart, model: RocketModel, inst: Instance, warnings: s
   if (p.filletRadius > 0) {
     warnings.push(`${p.name}: root fillets aren't built yet.`);
   }
-  if (Math.abs(p.tabMoved) >= 0.01) {
-    const by = Number(Math.abs(p.tabMoved).toFixed(2));
-    warnings.push(
-      `${p.name}: OpenRocket opens this file with the fin tab ${by} mm further ${p.tabMoved < 0 ? "forward" : "back"} than its saved ` +
-        `position (an OpenRocket bug with elliptical fins: it places the tab as if the fin were 50 mm long). ` +
-        `The tab here is where OpenRocket shows and simulates it. Each time the file is opened and saved in OpenRocket the tab ` +
-        `moves again; measuring the tab's position from the fin's front (top) in OpenRocket stops that.`,
-    );
-  }
+  if (p.tabNote) warnings.push(`${p.name}: ${p.tabNote}`);
   // Fin plane at angle 0: X = body radius + span coordinate, Z = fore end - chord coordinate.
   const ztop = model.length - inst.x;
   const R = p.bodyRadius;

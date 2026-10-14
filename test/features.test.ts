@@ -103,16 +103,17 @@ test("a pocket's rounded mouth, and @auto lines turning automatic details off", 
   const [sharp] = parseFeatures("@pocket diameter=21 depth=50").features;
   assert.ok(sharp.kind === "pocket" && sharp.round === 0);
 
-  const all = { pocket: true, vents: true, "nut-trap": true, edges: true };
+  const all = { solid: true, pocket: true, vents: true, "nut-trap": true, edges: true };
   assert.deepEqual(parseFeatures("Printed in PLA.").auto, all);
-  assert.deepEqual(parseFeatures("@auto off").auto, { pocket: false, vents: false, "nut-trap": false, edges: false });
+  assert.deepEqual(parseFeatures("@auto off").auto, { solid: false, pocket: false, vents: false, "nut-trap": false, edges: false });
   assert.deepEqual(parseFeatures("@auto vents=off EDGES=no").auto, { ...all, vents: false, edges: false });
   // Later ones win, and the lines aren't details themselves.
   const mixed = parseFeatures("@auto off\n@side-holes count=4 diameter=1 at=5\n@auto pocket=on");
-  assert.deepEqual(mixed.auto, { pocket: true, vents: false, "nut-trap": false, edges: false });
+  assert.deepEqual(mixed.auto, { solid: false, pocket: true, vents: false, "nut-trap": false, edges: false });
   assert.deepEqual(mixed.features.map((f) => f.kind), ["side-holes"]);
 
   const bad = [
+    ["@solid end=fore", /unknown setting "end"/],
     ["@auto", /say what to turn off/],
     ["@auto holes=off", /unknown automatic detail "holes"/],
     ["@auto vents=maybe", /vents must be on or off/],

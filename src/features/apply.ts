@@ -43,5 +43,9 @@ function toolsFor(part: Part, model: RocketModel, inst: Instance, f: Feature, wa
     case "chamfer":
     case "round":
       return [edgeTool(part, model, inst, f)];
+    case "solid":
+      // Built into the part's shape (isFilled); nothing to cut.
+      if (part.kind !== "transition") throw new FeatureError(`only nose cones and transitions can be made solid this way, not a ${part.type}`);
+      return [];
   }
 }

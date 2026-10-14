@@ -2,7 +2,7 @@
 // checking they fit: on the part, not overlapping, big enough to print.
 
 import { makeCylinder, type Shape3D } from "replicad";
-import type { Instance, Part, RocketModel } from "../ork/model.ts";
+import { isFilled, type Instance, type Part, type RocketModel } from "../ork/model.ts";
 import { FeatureError, type EndHoles, type SideHoles } from "./parse.ts";
 import { hasShoulder, outerRadiusAt, partSpan, sideHolePosition } from "./part-shape.ts";
 import { PRINTED } from "../export/colors.ts";
@@ -84,7 +84,7 @@ export function endHoleTools(part: Part, model: RocketModel, inst: Instance, f: 
   let rMin = 0;
   let rMax: number;
   if (part.kind === "transition") {
-    if (part.filled) throw new FeatureError("the part is solid, so end holes through it aren't supported");
+    if (isFilled(part)) throw new FeatureError("the part is solid, so end holes through it aren't supported");
     const capped = (["fore", "aft"] as const).filter(
       (side) => hasShoulder(part, side) && (side === "fore" ? part.foreShoulder : part.aftShoulder).capped,
     );

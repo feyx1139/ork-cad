@@ -7,6 +7,7 @@
 //   @nut-trap size=M5 depth=12 end=aft
 //   @chamfer end=aft length=6 angle=30 round=3
 //   @round end=fore radius=3
+//   @solid                    (prints a nose cone or transition solid that OpenRocket has hollow)
 //   @auto vents=off           (ork-cad's automatic details, see auto.ts; "@auto off" for none)
 //
 // Lengths are millimetres unless a unit is given (2.5mm, 0.3cm, 0.1in, 1/8in); angles are degrees.
@@ -93,13 +94,18 @@ export interface Round extends FeatureBase {
   radius: number;
 }
 
-export type Feature = SideHoles | EndHoles | Pocket | NutTrap | Chamfer | Round;
+/** Built solid, like ticking "Filled" in OpenRocket: for a printed part OpenRocket has hollow. */
+export interface Solid extends FeatureBase {
+  kind: "solid";
+}
+
+export type Feature = SideHoles | EndHoles | Pocket | NutTrap | Chamfer | Round | Solid;
 
 /**
  * The kinds of detail ork-cad can add by itself (see auto.ts). An "@auto" line turns them off or
  * on: "@auto off", "@auto vents=off edges=off".
  */
-export const AUTO_KINDS = ["pocket", "vents", "nut-trap", "edges"] as const;
+export const AUTO_KINDS = ["solid", "pocket", "vents", "nut-trap", "edges"] as const;
 export type AutoKind = (typeof AUTO_KINDS)[number];
 export type AutoSettings = Record<AutoKind, boolean>;
 
@@ -112,6 +118,7 @@ const KEYS: Record<Feature["kind"], string[]> = {
   "nut-trap": ["size", "depth", "end", "angle", "bolt", "hole", "flats", "thickness"],
   chamfer: ["end", "length", "inset", "angle", "round"],
   round: ["end", "radius"],
+  solid: [],
 };
 
 /**
@@ -273,6 +280,7 @@ const PARSERS: Record<Feature["kind"], (args: Args, source: string) => Feature> 
     return { kind: "chamfer", end: requiredEnd(args), length, angle, round, source };
   },
   round: (args, source) => ({ kind: "round", end: requiredEnd(args), radius: positive(args, "radius"), source }),
+  solid: (_args, source) => ({ kind: "solid", source }),
 };
 
 function parseArgs(text: string, allowed: string[]): Args {

@@ -3,7 +3,7 @@
 // the wrong place: an altimeter space with no vent holes, or holes that let ejection gas through
 // to the eggs.
 
-import { allParts, type Part, type RocketModel } from "../ork/model.ts";
+import { allParts, isFilled, type Part, type RocketModel } from "../ork/model.ts";
 import { transitionRadius } from "../geometry/shapes.ts";
 import { endFace, hasShoulder, isSolid, sideHolePosition } from "../features/part-shape.ts";
 
@@ -161,7 +161,7 @@ function findWalls(parts: Part[]): Wall[] {
       const x = p.instances[0].x;
       const fore = hasShoulder(p, "fore") ? p.foreShoulder : undefined;
       const aft = hasShoulder(p, "aft") ? p.aftShoulder : undefined;
-      if (p.filled) {
+      if (isFilled(p)) {
         solidWall(p, x - (fore?.length ?? 0), x + p.length + (aft?.length ?? 0));
         continue;
       }
@@ -243,14 +243,14 @@ function airSpace(model: RocketModel, parts: Part[], from: number, to: number): 
         if (0 <= s && s <= b.length) {
           const h = 1e-3;
           const slope = (transitionRadius(b, s + h) - transitionRadius(b, s - h)) / (2 * h);
-          const inner = b.filled ? 0 : transitionRadius(b, s) - b.thickness * Math.hypot(1, slope);
+          const inner = isFilled(b) ? 0 : transitionRadius(b, s) - b.thickness * Math.hypot(1, slope);
           r = Math.min(r, Math.max(0, inner));
         }
         for (const side of ["fore", "aft"] as const) {
           if (!hasShoulder(b, side)) continue;
           const sh = side === "fore" ? b.foreShoulder : b.aftShoulder;
           const s0 = side === "fore" ? -sh.length : b.length;
-          if (s0 <= s && s <= s0 + sh.length) r = Math.min(r, b.filled ? 0 : sh.radius - sh.thickness);
+          if (s0 <= s && s <= s0 + sh.length) r = Math.min(r, isFilled(b) ? 0 : sh.radius - sh.thickness);
         }
       }
     }

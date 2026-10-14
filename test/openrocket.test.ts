@@ -7,7 +7,7 @@
 import { before, test } from "node:test";
 import assert from "node:assert/strict";
 import { DistanceQuery, makeCompound, makeVertex, type Shape3D } from "replicad";
-import { allParts, type FinSetPart, type RocketModel, type TransitionPart } from "../src/ork/model.ts";
+import { allParts, type FinSetPart, type Part, type RocketModel, type TransitionPart } from "../src/ork/model.ts";
 import { buildPart } from "../src/geometry/parts.ts";
 import { solidVolume } from "../src/geometry/measure.ts";
 import { transitionRadius } from "../src/geometry/shapes.ts";
@@ -21,6 +21,9 @@ before(() => initOpenCascadeNode());
 
 const total = (solids: Shape3D[]) => solids.reduce((sum, s) => sum + solidVolume(s), 0);
 
+/** The part as OpenRocket has it: an elliptical fin's tab where OpenRocket moves it on opening. */
+const asOpenRocket = (part: Part): Part => (part.kind === "finset" ? { ...part, tab: part.openRocketTab } : part);
+
 /** OpenRocket's FinSet.CrossSection volume factors: it takes off a little for rounded or airfoil edges. */
 const EDGE_FACTOR: Record<string, number> = { square: 1, rounded: 0.99, airfoil: 0.85 };
 
@@ -30,7 +33,7 @@ for (const rocket of ROCKETS) {
     const ref = await readReference(rocket);
     const byId = new Map(ref.components.map((c) => [c.id, c]));
     for (const part of allParts(model)) {
-      const built = buildPart(part, model);
+      const built = buildPart(asOpenRocket(part), model);
       if (!built) continue;
       const c = byId.get(part.id)!;
       const refVolume = (c.componentVolume ?? c.componentMass / c.materialDensity!) * 1e9; // mm³
@@ -65,7 +68,7 @@ for (const rocket of ROCKETS) {
     const obj = await readObj(rocket);
     const byId = new Map(ref.components.map((c) => [c.id, c]));
     for (const part of allParts(model)) {
-      const built = buildPart(part, model);
+      const built = buildPart(asOpenRocket(part), model);
       if (!built) continue;
       const group = Number.parseInt(byId.get(part.id)!.objGroup!, 10);
       const indices = obj.groups.get(group);

@@ -66,6 +66,11 @@ export interface TransitionPart extends PartBase {
   aftShoulder: Shoulder;
 }
 
+/** Built solid: "Filled" ticked in OpenRocket, or a "@solid" line (written, or added by ork-cad). */
+export function isFilled(t: TransitionPart): boolean {
+  return t.filled || t.features.some((f) => f.kind === "solid");
+}
+
 /** Body tubes, inner tubes, couplers, centering rings, bulkheads, engine blocks and launch lugs. */
 export interface CylinderPart extends PartBase {
   kind: "cylinder";
@@ -79,6 +84,12 @@ export type FinOutline =
   | { shape: "elliptical"; rootChord: number; height: number }
   | { shape: "freeform"; points: [number, number][] };
 
+export interface FinTab {
+  start: number;
+  length: number;
+  height: number;
+}
+
 export interface FinSetPart extends PartBase {
   kind: "finset";
   finCount: number;
@@ -86,10 +97,12 @@ export interface FinSetPart extends PartBase {
   crossSection: string;
   cant: number;
   outline: FinOutline;
-  /** Tab below the root, in fin coordinates (x from the root's leading edge). */
-  tab: { start: number; length: number; height: number } | null;
-  /** How far OpenRocket's tab is from where the file's tab position puts it on this fin, mm (see finTab). */
-  tabMoved: number;
+  /** Tab below the root, in fin coordinates (x from the root's leading edge), where it was designed (see finTab). */
+  tab: FinTab | null;
+  /** The tab where OpenRocket has it after opening the file, which for elliptical fins isn't always the same. */
+  openRocketTab: FinTab | null;
+  /** Why the tab isn't where OpenRocket has it, or where it was moved to; empty if nothing to say. */
+  tabNote: string;
   filletRadius: number;
   /** Radius of the body tube at the fin root, mm. */
   bodyRadius: number;
@@ -561,7 +574,7 @@ function finSet(node: OrkNode, parent: Part): FinSetPart {
   const rootChord = outline.shape === "freeform" ? outline.points[outline.points.length - 1][0] : outline.rootChord;
 
   const finCount = Math.round(optNumber(node, "fincount") ?? optNumber(node, "instancecount") ?? 1);
-  const { tab, tabMoved } = finTab(node, outline.shape, rootChord);
+  const { tab, openRocketTab, tabNote } = finTab(node, outline.shape, rootChord);
   const radiusMethod = node.fields.get("radiusoffset")?.attrs.method ?? "surface";
   if (radiusMethod !== "surface") {
     throw new UnsupportedError(`"${name}" uses a "${radiusMethod}" radius offset; only "surface" is supported so far.`);
@@ -576,7 +589,8 @@ function finSet(node: OrkNode, parent: Part): FinSetPart {
     cant: (optNumber(node, "cant") ?? 0) * DEG,
     outline,
     tab,
-    tabMoved,
+    openRocketTab,
+    tabNote,
     filletRadius: optLength(node, "filletradius") ?? 0,
     bodyRadius,
   };
@@ -778,16 +792,22 @@ function tabStart(method: TabMethod, offset: number, inner: number, outer: numbe
 }
 
 /**
- * The fin tab as OpenRocket has it after opening the file, by replaying how it reads one (FinSet,
- * FinTabPositionSetter, FinSetPointHandler). It works out where the tab starts from the fin's
- * length at the moment it reads <tablength> and each <tabposition>, and files have those before the
- * root chord or fin points, so at that moment the fin still has its default 50 mm length. Trapezoidal
- * and freeform fin sets place the tab again once their size is read; elliptical ones don't
- * (OpenRocket 24.12), so their tab stays where it would be on a 50 mm fin, only shortened if it then
- * runs past the root's end. tabMoved is how far that puts an elliptical fin's tab from where its
- * saved position says.
+ * The fin tab, where it was designed, and where OpenRocket has it after opening the file.
+ *
+ * OpenRocket's comes from replaying how it reads one (FinSet, FinTabPositionSetter,
+ * FinSetPointHandler). It works out where the tab starts from the fin's length at the moment it
+ * reads <tablength> and each <tabposition>, and files have those before the root chord or fin
+ * points, so at that moment the fin still has its default 50 mm length. Trapezoidal and freeform
+ * fin sets place the tab again once their size is read; elliptical ones don't (OpenRocket 24.12),
+ * so their tab stays where it would be on a 50 mm fin, only shortened if it then runs past the
+ * root's end.
+ *
+ * Saving writes that misplaced tab back, so every time the file is opened and saved an elliptical
+ * fin's tab moves again by the same amount (unless its position is measured from the top). The
+ * built tab undoes that: it's where the saved position puts it on the real fin, or, if that sticks
+ * out of the root, moved back one opening at a time until it fits.
  */
-function finTab(node: OrkNode, shape: FinOutline["shape"], finLength: number): { tab: FinSetPart["tab"]; tabMoved: number } {
+function finTab(node: OrkNode, shape: FinOutline["shape"], finLength: number): { tab: FinTab | null; openRocketTab: FinTab | null; tabNote: string } {
   const SAME = 1e-8 * M; // OpenRocket's MathUtil.EPSILON
   let method: TabMethod = "middle";
   let offset = 0;
@@ -840,9 +860,56 @@ function finTab(node: OrkNode, shape: FinOutline["shape"], finLength: number): {
     }
   }
   const height = optLength(node, "tabheight") ?? 0;
-  if (!(height > 0 && tabLength > 0)) return { tab: null, tabMoved: 0 };
-  const tabMoved = shape === "elliptical" ? start - tabStart(method, offset, savedLength, finLength) : 0;
-  return { tab: { start, length: tabLength, height }, tabMoved };
+  const openRocketTab = height > 0 && tabLength > 0 ? { start, length: tabLength, height } : null;
+  if (shape !== "elliptical" || !(height > 0 && savedLength > 0)) return { tab: openRocketTab, openRocketTab, tabNote: "" };
+
+  // Where the saved position puts the tab on this fin, and how far each opening moves it.
+  const saved = tabStart(method, offset, savedLength, finLength);
+  const drift = tabStart(method, offset, savedLength, 0.05 * M) - saved;
+  const fits = (x: number) => x >= -0.01 && x + savedLength <= finLength + 0.01;
+  let times = 0;
+  if (Math.abs(drift) >= 0.01) {
+    while (times <= 5 && !fits(saved - times * drift)) times++;
+    if (times > 5) times = 0;
+  }
+  const at = saved - times * drift;
+  const f = (v: number) => String(Number(v.toFixed(2)));
+  const way = (d: number) => (d < 0 ? "forward" : "back");
+  const fix = `Measured from the top (front) of the root, OpenRocket leaves it where it is: set the tab position to ${f(Math.max(0, at))} mm relative to the top of the root and save.`;
+  if (!fits(at)) {
+    // Longer than the root, or never fitted it: build the part along the root.
+    const a = Math.max(0, at);
+    const b = Math.min(finLength, at + savedLength);
+    if (b - a < 0.01) return { tab: null, openRocketTab, tabNote: `The fin tab is behind or in front of the root, so it's left out.` };
+    return {
+      tab: { start: a, length: b - a, height },
+      openRocketTab,
+      tabNote: `The fin tab (${f(savedLength)} mm long) runs past the fin's root (${f(finLength)} mm), so only the part along the root is built, ${f(a)} to ${f(b)} mm from its front.`,
+    };
+  }
+  const tab = { start: at, length: savedLength, height };
+  const where = `${f(at)} to ${f(at + savedLength)} mm from the front of the root`;
+  const bug = `(an OpenRocket 24.12 bug with elliptical fins: it places the tab as if the fin were 50 mm long)`;
+  if (times > 0) {
+    const out = saved < 0 ? -saved : saved + savedLength - finLength;
+    return {
+      tab,
+      openRocketTab,
+      tabNote:
+        `The fin tab is put back where it was designed, ${where}. As saved, it would stick out ${f(out)} mm ${saved < 0 ? "in front of" : "behind"} the fin: ` +
+        `each time the file is opened and saved in OpenRocket, the tab moves ${f(Math.abs(drift))} mm ${way(drift)} ${bug}, and this one has moved ` +
+        `${times === 1 ? "once" : `${times} times`} (OpenRocket now shows it ${f(Math.abs(start - at))} mm further ${way(start - at)}). ${fix}`,
+    };
+  }
+  const shown = Math.abs(start - at) >= 0.01 || Math.abs(tabLength - savedLength) >= 0.01;
+  return {
+    tab,
+    openRocketTab,
+    tabNote: shown
+      ? `The fin tab is built where the file has it, ${where}. OpenRocket shows it ${f(Math.abs(start - at))} mm further ${way(start - at)} after opening ` +
+        `the file ${bug}, and saving the file keeps it there. ${fix}`
+      : "",
+  };
 }
 
 function bool(node: OrkNode, name: string): boolean {

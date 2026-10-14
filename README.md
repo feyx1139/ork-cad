@@ -157,10 +157,13 @@ eyebolt, a lead-in on the aft shoulder and a rounded fore rim.
     when the part stands on that end.
   - `round`: an optional radius that blends the start of the bevel.
 - **`@round`** rounds the outside edge at an end with `radius`.
+- **`@solid`** builds a nose cone or transition solid, shoulders included, although OpenRocket has
+  it hollow.
 - **Solid parts:** pockets and nut traps need a solid part. Tick **Filled** for the part in
-  OpenRocket, and set its material to your infill density so the mass stays right. A filled part is
-  built solid, shoulders included; OpenRocket's mass model still counts a filled part's shoulders
-  as tubes with the shoulder thickness, so set that to the shoulder radius too.
+  OpenRocket, and set its material to your infill density so the mass stays right, or write
+  `@solid`. A filled part is built solid, shoulders included; OpenRocket's mass model still counts
+  a filled part's shoulders as tubes with the shoulder thickness, so set that to the shoulder radius
+  too.
 - **Units:** lengths are mm unless written otherwise (`2mm`, `0.3cm`, `1/8in`); angles are
   degrees.
 
@@ -203,9 +206,14 @@ and the website and the report give the reason for each.
   None are added when the space already has vents of your own, and `@auto vents=off` keeps them off
   a part (they go to the next best place). Holes this small come out smaller, or closed, when
   printed running sideways: drill them out to size afterwards.
+- **Printing solid.** A printed nose cone or transition that's hollow in OpenRocket, but whose
+  material has an infill's density (under 800 kg/m³; solid PLA is 1240), is printed solid with that
+  infill anyway, so ork-cad builds it solid (`@solid`) when the altimeter pocket or the eyebolt nut
+  needs that. OpenRocket still works out its mass as hollow, so tick Filled there too. A hollow part
+  of solid plastic is a thin wall on purpose and stays hollow.
 - **Altimeter pocket.** When OpenRocket has the altimeter inside a printed nose cone or transition
-  that's ticked **Filled**. The altimeter is a mass component of type Altimeter, or one named
-  "altimeter". The pocket is:
+  that's solid (ticked **Filled**, or printed solid as above). The altimeter is a mass component of
+  type Altimeter, or one named "altimeter". The pocket is:
   - square, 1 mm wider than the altimeter's diameter, so a box-shaped altimeter fits;
   - 3 mm deeper than where the altimeter ends, and past the middle of a band so vents through the
     band open into it;
@@ -213,9 +221,9 @@ and the website and the report give the reason for each.
     and comes out after each flight for the official reading;
   - rounded at its mouth (a fifth of its width, at most 4 mm) to guide the altimeter in.
 
-  When the part is hollow in OpenRocket, it says to tick Filled instead.
+  When the part stays hollow, it says to tick Filled instead.
 - **Eyebolt nut.** When the shock cord sits next to an end of a printed nose cone or transition
-  that's ticked Filled: a captive nut for an M4 eyebolt, 12 mm in from the end. The screw goes in
+  that's solid: a captive nut for an M4 eyebolt, 12 mm in from the end. The screw goes in
   along the axis, and the nut goes in through a slot in the side of the shoulder, which the tube
   covers once the rocket is together. The nut can't turn or fall out, so the eyebolt can't work
   loose.
@@ -228,7 +236,7 @@ and the website and the report give the reason for each.
 
 A line of the same kind written in the part's comment takes the place of the automatic one
 (`@chamfer` and `@round` for each end on its own). `@auto off` turns them all off for that part,
-or one kind at a time: `@auto vents=off`, `pocket=off`, `nut-trap=off`, `edges=off`. When
+or one kind at a time: `@auto vents=off`, `solid=off`, `pocket=off`, `nut-trap=off`, `edges=off`. When
 comparing with a CAD file, the changes include `@auto off`, so the part comes out just like the
 file.
 
@@ -259,10 +267,13 @@ Sizes set to "auto" in OpenRocket are worked out the way OpenRocket 24.12 does: 
 neighbouring body parts (across stages too), rings and bulkheads from the tube they sit in, and
 packed parachutes from their tube, keeping their packed volume.
 
-Fin tabs go where OpenRocket 24.12 puts them when it opens the file. For elliptical fins that isn't
-where the saved position says: OpenRocket places the tab as if the fin were 50 mm long, and every
-time the file is opened and saved there, the tab moves again. The part follows OpenRocket and a note
-says so. Measuring the tab's position from the fin's front (top) in OpenRocket avoids the problem.
+Fin tabs go where OpenRocket 24.12 puts them when it opens the file, except on elliptical fins.
+There OpenRocket places the tab as if the fin were 50 mm long, so it shows the tab in the wrong place
+(an 80 mm fin's middle tab 15 mm too far forward), and every time the file is opened and saved, the
+tab moves again by the same amount. ork-cad builds the tab where the saved position puts it, and if
+that sticks out of the fin, moves it back one opening at a time until it fits: where it was
+designed. A note says what it did. Measuring the tab's position from the fin's front (top) in
+OpenRocket stops it moving.
 
 Not supported yet (those parts are listed as not built, with the reason): pods and side boosters,
 motor clusters, flipped nose cones (tail cones), canted fins, fins on a nose cone or transition,
@@ -318,8 +329,9 @@ designs of your own in `test/private/fixtures/`, a folder git ignores.
   lead-ins worked out by hand. Its altimeter's space holds the air worked out by hand; the vents are
   sized from that by PerfectFlite's rule, sit in the middle of the band, turn away from the launch
   lug and, built, open into the pocket; the pocket's rounded mouth removes exactly the volume worked
-  out by hand. `@auto` lines and lines of your own turn them off or take their place, and a hollow
-  transition gets lead-ins sized for its wall and a note to tick Filled.
+  out by hand. `@auto` lines and lines of your own turn them off or take their place. A hollow
+  transition at an infill's density is built solid, the same as ticking Filled; one of solid plastic
+  gets lead-ins sized for its wall and a note to tick Filled.
 - **Sealed spaces:** the ARC example's spaces, with an altimeter in its payload bay: the vent
   warning, the vents, ejection gas through a bulkhead, and the air volume.
 - **Edited files:** `.ork` files change only the comment, and OpenRocket itself opens them and reads

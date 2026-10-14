@@ -1,7 +1,8 @@
 // Details ork-cad adds by itself, worked out from the design, so printed parts come out ready to
 // fly without typing them in. Each is an ordinary detail line with the reason it was added; a line
 // of the same kind written in the comment replaces it, and "@auto off" (or "@auto vents=off",
-// "@auto pocket=off", "@auto nut-trap=off", "@auto edges=off") in a part's comment turns them off.
+// "@auto solid=off", "@auto pocket=off", "@auto nut-trap=off", "@auto edges=off") in a part's
+// comment turns them off.
 //
 //  - vents: holes into the altimeter's sealed space, so it senses the outside air pressure. Four
 //    in a ring, 90 degrees apart (the American Rocketry Challenge handbook: four is best, never
@@ -9,6 +10,9 @@
 //    smooth part of the outside, well behind the nose cone, near the altimeter, turned so nothing
 //    sticking out of the rocket ahead of them is in line with one. None if the space already has
 //    vents of your own; "@auto vents=off" on a part keeps them off that part.
+//  - solid: a printed nose cone or transition that OpenRocket has hollow, but whose material has an
+//    infill's density (so it's printed solid with infill anyway), is printed solid when its
+//    altimeter pocket or eyebolt nut needs that.
 //  - pocket: when OpenRocket has the altimeter inside a solid printed nose cone or transition, a
 //    square pocket for it from the end away from the ejection charge, with a rounded mouth.
 //  - nut-trap: when the shock cord sits next to an end of a solid printed nose cone or
@@ -16,7 +20,7 @@
 //  - edges: the free end of each shoulder of a printed nose cone or transition gets a lead-in, so
 //    it slides into its tube: a chamfer on the end it's printed standing on, a round on the other.
 
-import { allParts, type Part, type RocketModel, type TransitionPart } from "../ork/model.ts";
+import { allParts, isFilled, type Part, type RocketModel, type TransitionPart } from "../ork/model.ts";
 import { PRINTED } from "../export/colors.ts";
 import { findCompartments, isAltimeter, type Compartment } from "../checks/compartments.ts";
 import { hasShoulder, outerRadiusAt, partSpan } from "./part-shape.ts";
@@ -37,6 +41,8 @@ const MIN_VENT = 0.508;
 const NOSE_CALIBRES = 4;
 /** And this far from where a tube starts or ends, or from a coupler or shoulder inside it (mm). */
 const JOINT_GAP = 10;
+/** Plastic lighter than this is a printing infill, kg/m³: no printing plastic is that light solid (PLA is 1240). */
+const INFILL_DENSITY = 800;
 /** The eyebolt: its screw size, and the plastic between the end and its nut (mm). */
 const EYEBOLT = "M4";
 const EYEBOLT_DEPTH = 12;
@@ -53,6 +59,7 @@ export function addAutoDetails(model: RocketModel): void {
   }
   const transitions = parts.filter((p): p is TransitionPart => p.kind === "transition");
   const wantSolid = new Map<TransitionPart, string[]>();
+  solid(model, transitions);
   for (const p of transitions) edges(p);
   const before = findCompartments(model).compartments;
   for (const p of transitions) pocket(model, p, before, wantSolid);
@@ -70,6 +77,47 @@ export function addAutoDetails(model: RocketModel): void {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Solid
+
+/**
+ * Printed solid, when OpenRocket has a printed nose cone or transition hollow but its material has
+ * an infill's density, so it's printed solid with infill anyway (OpenRocket's wall only gets its
+ * mass about right), and the altimeter's pocket or the eyebolt's nut needs solid plastic. A part
+ * of solid plastic stays hollow: its thin wall is meant. Every part that could be is tried solid at
+ * once, since a solid part splits the spaces around it (a hollow transition can join the shock
+ * cord's space to a nose cone's).
+ */
+function solid(model: RocketModel, transitions: TransitionPart[]): void {
+  const tried = transitions.flatMap((p) => {
+    if (!printed(p) || p.filled || !on(p, "solid") || p.features.some((f) => f.kind === "solid")) return [];
+    const material = p.node?.fields.get("material");
+    const density = Number(material?.attrs.density);
+    if (!(density > 0 && density < INFILL_DENSITY)) return [];
+    add(p, "@solid", "?");
+    return [{ p, because: `its material (${material?.text}, ${density} kg/m³) has an infill's density, so it's printed solid with that infill anyway` }];
+  });
+  if (!tried.length) return;
+  const spaces = findCompartments(model).compartments;
+  for (const { p, because } of tried) {
+    const needs: string[] = [];
+    const alt = on(p, "pocket") ? altimeterIn(model, p) : undefined;
+    if (alt) needs.push(`a pocket for the altimeter (${alt.part.name})`);
+    const cord = on(p, "nut-trap") ? cordAt(p, spaces) : undefined;
+    if (cord) needs.push(`a captive nut for the eyebolt the shock cord (${cord.cord.name}) ties to`);
+    const f = p.features.find((x) => x.kind === "solid" && x.auto)!;
+    if (!needs.length) {
+      p.features = p.features.filter((x) => x !== f);
+      continue;
+    }
+    const wall = p.thickness > 0 ? `, with a ${mm(p.thickness)} mm wall` : "";
+    f.auto =
+      `Printed solid: OpenRocket has ${p.name} hollow${wall}, but ${needs.join(" and ")} need${needs.length === 1 ? "s" : ""} solid plastic, ` +
+      `and ${because}. OpenRocket still works out its mass as hollow; tick "Filled" for it there too (or keep a mass override) so the ` +
+      `simulation has the printed mass. Turn this off and it stays hollow, without them.`;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Edges
 
 /** Lead-ins on the free ends of a printed part's shoulders, so they slide into their tubes. */
@@ -84,7 +132,7 @@ function edges(p: TransitionPart): void {
     if (p.features.some((f) => (f.kind === "chamfer" || f.kind === "round") && f.end === end)) continue;
     const sh = end === "fore" ? p.foreShoulder : p.aftShoulder;
     // In by 5% of the shoulder's diameter, at most 4 mm; on a hollow shoulder at most half its wall.
-    const wall = p.filled ? Infinity : sh.thickness;
+    const wall = isFilled(p) ? Infinity : sh.thickness;
     let inset = Math.floor(Math.min(4, 0.1 * sh.radius) * 10 + 1e-9) / 10;
     const thin = wall / 2 < inset;
     if (thin) inset = Math.floor((wall / 2) * 10 + 1e-9) / 10;
@@ -143,7 +191,7 @@ function pocket(model: RocketModel, p: TransitionPart, spaces: Compartment[], wa
   if (!printed(p) || !on(p, "pocket") || p.features.some((f) => f.kind === "pocket")) return;
   const alt = altimeterIn(model, p);
   if (!alt) return;
-  if (!p.filled) {
+  if (!isFilled(p)) {
     wantSolid.set(p, [...(wantSolid.get(p) ?? []), `a pocket for the altimeter (${alt.part.name})`]);
     return;
   }
@@ -236,47 +284,55 @@ function packedRadius(q: Part): number {
 /** A captive nut for the eyebolt the shock cord is tied to, at the end the cord is next to. */
 function nutTrap(model: RocketModel, p: TransitionPart, spaces: Compartment[], wantSolid: Map<TransitionPart, string[]>): void {
   if (!printed(p) || !on(p, "nut-trap") || p.features.some((f) => f.kind === "nut-trap")) return;
+  const span = partSpan(p);
+  const at = cordAt(p, spaces);
+  if (!at) return;
+  const { end, cord } = at;
+  const sh = end === "fore" ? p.foreShoulder : p.aftShoulder;
+  if (!isFilled(p)) {
+    // A capped hollow shoulder takes an eyebolt with its nut on the inside, no trap needed.
+    if (!sh.capped) wantSolid.set(p, [...(wantSolid.get(p) ?? []), `a captive nut for the eyebolt the shock cord (${cord.name}) ties to`]);
+    return;
+  }
+  if (p.features.some((f) => f.kind === "pocket" && f.end === end)) {
+    note(p, `The shock cord (${cord.name}) is next to the ${end} end, but the altimeter pocket opens there, so there's no room for an eyebolt in the middle of it.`);
+    return;
+  }
+  const nut = nutSize(EYEBOLT)!;
+  const thickness = nut.thickness + NUT_ROOM.thickness;
+  // The screw hole goes 3 mm past the nut (the nut-trap default); keep plastic between it and
+  // a pocket from the other end.
+  const length = span.max - span.min;
+  const other = p.features.find((f) => f.kind === "pocket" && f.end !== end);
+  const room = (other && other.kind === "pocket" ? length - other.depth - POCKET_WALL : length - FLOOR) - 3 - nut.hole / 2;
+  const depth = Math.floor(Math.min(EYEBOLT_DEPTH, sh.length - thickness - 3, room - thickness) * 10) / 10;
+  if (depth < 5) {
+    note(p, `The shock cord (${cord.name}) is next to the ${end} end, but there's no room there for a captive eyebolt nut.`);
+    return;
+  }
+  const bolt = depth + thickness + 3;
+  add(
+    p,
+    `@nut-trap size=${EYEBOLT} depth=${mm(depth)} end=${end}`,
+    `Eyebolt anchor: the shock cord (${cord.name}) is next to the ${end} end, so an ${EYEBOLT} eyebolt screws in through the end ` +
+      `into a nut held in a hex pocket ${mm(depth)} mm in. The nut goes in through the slot in the side of the shoulder, which the tube ` +
+      `covers once the rocket is together, so the nut can't turn or fall out and the eyebolt can't work loose. ` +
+      `The screw hole is ${mm(bolt)} mm deep; the eyebolt needs at least ${mm(depth + nut.thickness)} mm of thread.`,
+  );
+}
+
+/** The end with a shoulder that the shock cord sits next to (the aft one first), if any. */
+function cordAt(p: TransitionPart, spaces: Compartment[]): { end: "fore" | "aft"; cord: Part } | undefined {
   const x0 = p.instances[0].x;
   const span = partSpan(p);
   for (const end of ["aft", "fore"] as const) {
     // The nut goes in through a slot in the side, which the tube over a shoulder keeps closed.
     if (!hasShoulder(p, end)) continue;
-    const sh = end === "fore" ? p.foreShoulder : p.aftShoulder;
     const face = end === "fore" ? x0 + span.min : x0 + span.max;
     const cord = spaceAt(spaces, end === "fore" ? face - 0.01 : face + 0.01)?.contents.find((q) => q.type === "shockcord");
-    if (!cord) continue;
-    if (!p.filled) {
-      // A capped hollow shoulder takes an eyebolt with its nut on the inside, no trap needed.
-      if (!sh.capped) wantSolid.set(p, [...(wantSolid.get(p) ?? []), `a captive nut for the eyebolt the shock cord (${cord.name}) ties to`]);
-      return;
-    }
-    if (p.features.some((f) => f.kind === "pocket" && f.end === end)) {
-      note(p, `The shock cord (${cord.name}) is next to the ${end} end, but the altimeter pocket opens there, so there's no room for an eyebolt in the middle of it.`);
-      return;
-    }
-    const nut = nutSize(EYEBOLT)!;
-    const thickness = nut.thickness + NUT_ROOM.thickness;
-    // The screw hole goes 3 mm past the nut (the nut-trap default); keep plastic between it and
-    // a pocket from the other end.
-    const length = span.max - span.min;
-    const other = p.features.find((f) => f.kind === "pocket" && f.end !== end);
-    const room = (other && other.kind === "pocket" ? length - other.depth - POCKET_WALL : length - FLOOR) - 3 - nut.hole / 2;
-    const depth = Math.floor(Math.min(EYEBOLT_DEPTH, sh.length - thickness - 3, room - thickness) * 10) / 10;
-    if (depth < 5) {
-      note(p, `The shock cord (${cord.name}) is next to the ${end} end, but there's no room there for a captive eyebolt nut.`);
-      return;
-    }
-    const bolt = depth + thickness + 3;
-    add(
-      p,
-      `@nut-trap size=${EYEBOLT} depth=${mm(depth)} end=${end}`,
-      `Eyebolt anchor: the shock cord (${cord.name}) is next to the ${end} end, so an ${EYEBOLT} eyebolt screws in through the end ` +
-        `into a nut held in a hex pocket ${mm(depth)} mm in. The nut goes in through the slot in the side of the shoulder, which the tube ` +
-        `covers once the rocket is together, so the nut can't turn or fall out and the eyebolt can't work loose. ` +
-        `The screw hole is ${mm(bolt)} mm deep; the eyebolt needs at least ${mm(depth + nut.thickness)} mm of thread.`,
-    );
-    return;
+    if (cord) return { end, cord };
   }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------------------------

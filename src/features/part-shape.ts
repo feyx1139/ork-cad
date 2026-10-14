@@ -2,7 +2,7 @@
 // and whether it's solid. Positions s are measured from the fore end of the part's body;
 // negative values are inside a fore shoulder.
 
-import type { Part, TransitionPart } from "../ork/model.ts";
+import { isFilled, type Part, type TransitionPart } from "../ork/model.ts";
 import { transitionRadius } from "../geometry/shapes.ts";
 import { FeatureError, type SideHoles } from "./parse.ts";
 
@@ -10,7 +10,7 @@ import { FeatureError, type SideHoles } from "./parse.ts";
 export function hasShoulder(t: TransitionPart, side: "fore" | "aft"): boolean {
   const sh = side === "fore" ? t.foreShoulder : t.aftShoulder;
   const end = side === "fore" ? t.foreRadius : t.aftRadius;
-  return sh.length > 0 && sh.radius > 0 && end > 0 && (t.filled || sh.thickness > 0);
+  return sh.length > 0 && sh.radius > 0 && end > 0 && (isFilled(t) || sh.thickness > 0);
 }
 
 /** The part's extent along its axis, shoulders included. */
@@ -56,7 +56,7 @@ export function endFace(part: Part, end: "fore" | "aft"): EndFace {
         s: end === "fore" ? -sh.length : part.length + sh.length,
         inward,
         radius: sh.radius,
-        innerRadius: part.filled || sh.capped ? 0 : sh.radius - sh.thickness,
+        innerRadius: isFilled(part) || sh.capped ? 0 : sh.radius - sh.thickness,
         straight: sh.length,
       };
     }
@@ -66,7 +66,7 @@ export function endFace(part: Part, end: "fore" | "aft"): EndFace {
       s,
       inward,
       radius,
-      innerRadius: part.filled ? 0 : Math.max(0, radius - part.thickness),
+      innerRadius: isFilled(part) ? 0 : Math.max(0, radius - part.thickness),
       straight: part.foreRadius === part.aftRadius ? part.length : 0,
     };
   }
@@ -78,7 +78,7 @@ export function endFace(part: Part, end: "fore" | "aft"): EndFace {
 
 /** Solid all the way through; pockets and nut traps need that. */
 export function isSolid(part: Part): boolean {
-  return (part.kind === "transition" && part.filled) || (part.kind === "cylinder" && part.innerRadius === 0);
+  return (part.kind === "transition" && isFilled(part)) || (part.kind === "cylinder" && part.innerRadius === 0);
 }
 
 /** Where a side hole lands, as a distance from the part's fore end (negative = fore shoulder). */

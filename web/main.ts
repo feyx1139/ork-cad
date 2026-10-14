@@ -213,10 +213,12 @@ const HELP = `@side-holes count=4 diameter=2 at=10
 @nut-trap size=M5 depth=12 end=aft angle=90
 @chamfer end=aft length=6 angle=30 round=3
 @round end=fore radius=3
+@solid
 @auto vents=off`;
 
 /** What turning each kind of automatic detail off means, for the button's tooltip. */
 const AUTO_NAMES: Record<string, string> = {
+  solid: "printing solid (it stays hollow, as in OpenRocket)",
   vents: "altimeter vents",
   pocket: "altimeter pocket",
   "nut-trap": "eyebolt nut trap",
@@ -258,9 +260,11 @@ function showSelected(): void {
       <code>angle=0</code> lines up with the first fin. <code>at</code> is measured from the fore end of the part's body;
       a negative <code>at</code> goes into its fore shoulder. A chamfer can be given by its <code>inset</code> (how far in
       it cuts at the end face) instead of its <code>length</code>, and a pocket's <code>round</code> rounds the edge of its
-      mouth. Pockets and nut traps need the part to be solid: tick <em>Filled</em> for it in OpenRocket. A line here
+      mouth. Pockets and nut traps need the part to be solid: tick <em>Filled</em> for it in OpenRocket, or write
+      <code>@solid</code> (ork-cad adds it by itself to a part whose material has an infill's density). A line here
       replaces the automatic detail of the same kind; <code>@auto off</code> turns them all off for this part, or one kind
-      at a time: <code>@auto vents=off</code>, <code>pocket=off</code>, <code>nut-trap=off</code>, <code>edges=off</code>.
+      at a time: <code>@auto vents=off</code>, <code>solid=off</code>, <code>pocket=off</code>, <code>nut-trap=off</code>,
+      <code>edges=off</code>.
       The details are saved into the part's comment when you save the .ork.</p>
     </details>
     <h3>Download this part</h3>

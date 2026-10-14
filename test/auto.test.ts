@@ -144,11 +144,42 @@ test("@auto turns them off; a line of the same kind takes the place of the autom
   assert.deepEqual(lines(vents.named("Altimeter band")).map((l) => l.split(" ")[0]), ["@round", "@chamfer", "@pocket", "@nut-trap"]);
 });
 
-test("a hollow transition gets lead-ins sized for its wall, and a note about ticking Filled", async () => {
+test("a hollow transition at an infill's density is printed solid, so it gets its pocket and eyebolt nut", async () => {
   const model = await loadOrkFile(FILE);
   const band = allParts(model).find((p) => p.name === "Altimeter band") as TransitionPart;
   band.filled = false;
   band.thickness = 2;
+  addAutoDetails(model);
+  assert.deepEqual(lines(band), [
+    "@solid",
+    "@round end=fore radius=3.1",
+    "@chamfer end=aft inset=3.1 angle=30 round=4.6",
+    "@pocket size=17x17 depth=49 end=fore round=3",
+    "@nut-trap size=M4 depth=12 end=aft",
+    "@side-holes count=4 diameter=1.1 at=6 angle=0",
+  ]);
+  assert.deepEqual(band.autoNotes, []);
+  const why = band.features.find((f) => f.kind === "solid")!.auto!;
+  assert.match(why, /hollow, with a 2 mm wall, but a pocket for the altimeter \(Altimeter\) and a captive nut .* need solid plastic/);
+  assert.match(why, /\(PLA 15% infill, 300 kg\/m³\) has an infill's density/);
+  // Built, it's the same as ticking Filled.
+  const filled = await load();
+  const volume = (m: RocketModel, p: Part) => solidVolume(buildPart(p, m)!.solids[0]);
+  assert.ok(Math.abs(volume(model, band) / volume(filled.model, filled.named("Altimeter band")) - 1) < 1e-9);
+
+  // "@auto solid=off" keeps it hollow, with a note instead.
+  band.autoSettings = parseFeatures("@auto solid=off").auto;
+  addAutoDetails(model);
+  assert.ok(!band.features.some((f) => f.kind === "solid" || f.kind === "pocket" || f.kind === "nut-trap"));
+  assert.match(band.autoNotes![0], /hollow in OpenRocket, so ork-cad can't give it a pocket/);
+});
+
+test("a hollow transition of solid plastic gets lead-ins sized for its wall, and a note about ticking Filled", async () => {
+  const model = await loadOrkFile(FILE);
+  const band = allParts(model).find((p) => p.name === "Altimeter band") as TransitionPart;
+  band.filled = false;
+  band.thickness = 2;
+  band.node.fields.get("material")!.attrs.density = "1240";
   addAutoDetails(model);
   assert.deepEqual(lines(band).slice(0, 2), ["@round end=fore radius=1", "@chamfer end=aft inset=1 angle=45"]);
   assert.ok(!band.features.some((f) => f.kind === "pocket" || f.kind === "nut-trap"));
