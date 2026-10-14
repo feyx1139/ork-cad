@@ -1,0 +1,6 @@
+node_modules/
+out/
+dist/
+# Your own designs and the tests and scripts that use them stay out of git.
+test/private/
+scripts/private/

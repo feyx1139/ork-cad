@@ -1,0 +1,127 @@
+// The website's design session (web/session.ts), run in Node on OpenRocket's "3D printable nose
+// cone and fins" example: open it, build and mesh its parts, edit details, and make every download.
+
+import { before, test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { strFromU8, unzipSync } from "fflate";
+import { Session } from "../web/session.ts";
+import { initOpenCascadeNode, modelFromBytes, xmlTools } from "../src/node/load.ts";
+import { allParts, type TransitionPart } from "../src/ork/model.ts";
+import { fixture } from "./helpers.ts";
+import { wallVolume } from "./volumes.ts";
+
+before(() => initOpenCascadeNode());
+
+const FILE = "3d-printable-nose-cone-and-fins.ork";
+const HOLES = "@side-holes count=3 diameter=2 at=60 angle=45";
+
+function open() {
+  const session = Session.open(new Uint8Array(readFileSync(fixture(FILE))), FILE, xmlTools);
+  const views = session.buildAll();
+  const key = (name: string) => views.find((v) => v.name === name)!.key;
+  return { session, views, key };
+}
+
+test("opening the example builds and meshes every part", () => {
+  const { session, views } = open();
+  assert.equal(session.rocket.name, "3D printable nose cone and fins");
+  assert.deepEqual(
+    views.map((v) => v.name),
+    [
+      "Printable nose cone",
+      "Paper Body Tube -- DO NOT PRINT",
+      "Printable Fin Can and Motor Mount",
+      "Launch lug",
+      "Trapezoidal fin set",
+      "Centering ring",
+      "Centering ring",
+      "Inner Tube",
+      "Engine block",
+      "Tube Coupler",
+    ],
+  );
+  for (const v of views) {
+    assert.ok(v.mesh && v.mesh.triangles.length > 0 && v.mesh.edges.length > 0, `${v.name} mesh`);
+    assert.equal(v.mesh.vertices.length, v.mesh.normals.length);
+    assert.ok(Math.max(...v.mesh.triangles) < v.mesh.vertices.length / 3, `${v.name} triangle indices`);
+    assert.deepEqual(v.errors, []);
+  }
+  const [nose, paper, finCan] = views;
+  const model = modelFromBytes(new Uint8Array(readFileSync(fixture(FILE))));
+  const exact = wallVolume(allParts(model).find((p) => p.name === nose.name) as TransitionPart)!;
+  assert.ok(nose.printed && nose.density === 1250 && Math.abs(nose.volume / exact - 1) < 1e-7, `${nose.volume} vs ${exact}`);
+  assert.ok(!paper.printed, "the paper tube isn't printed");
+  assert.ok(finCan.printed);
+  assert.equal(views[4].copies, 3);
+});
+
+test("editing details rebuilds the part, keeps notes, and reports problems", () => {
+  const { session, views, key } = open();
+  const before = views.find((v) => v.name === "Printable nose cone")!.volume;
+  const holed = session.setDetails(key("Printable nose cone"), HOLES);
+  assert.ok(holed.volume < before && before - holed.volume > 10, "holes removed material");
+  assert.equal(holed.details, HOLES);
+  assert.ok(session.hasEdits);
+
+  const typo = session.setDetails(key("Printable nose cone"), "@side-holes count=3 diam=2 at=60");
+  assert.match(typo.errors.join("\n"), /unknown setting "diam"/);
+  assert.ok(typo.mesh, "still shown");
+
+  const needsSolid = session.setDetails(key("Printable nose cone"), "@pocket size=10x8 depth=20 end=aft");
+  assert.match(needsSolid.errors.join("\n"), /tick "Filled"/);
+  assert.ok(needsSolid.mesh && Math.abs(needsSolid.volume - before) < 1e-6, "shown without the detail");
+
+  // The centering ring's comment has a note; a line without @ is kept as one too.
+  const ring = session.setDetails(key("Centering ring"), "drill by hand\n@end-holes count=3 diameter=0.5 radius=11.2");
+  assert.match(ring.errors.join("\n"), /doesn't start with @/);
+  const comment = session.part(key("Centering ring")).comment;
+  assert.ok(comment.startsWith("The centering ring automatically") && comment.includes("drill by hand"), comment);
+  assert.ok(comment.endsWith("@end-holes count=3 diameter=0.5 radius=11.2"), comment);
+});
+
+test("sealed spaces: the nose, the parachute bay the motor fires into, and the fin can", () => {
+  const { session } = open();
+  const { spaces, warnings } = session.spaces();
+  assert.deepEqual(
+    spaces.map((s) => [Number(s.from.toFixed(1)), Number(s.to.toFixed(1))]),
+    [
+      [0, 117.8],
+      [120, 278.6],
+      [283.6, 323.6],
+    ],
+  );
+  assert.ok(spaces[1].ejection && spaces[1].contents.includes("Parachute"));
+  assert.deepEqual(warnings, []);
+});
+
+test("downloads: one part, everything in a zip, and the .ork with details", async () => {
+  const { session, key } = open();
+  const step = await session.partFile(key("Printable nose cone"), "step");
+  assert.equal(step.name, "Printable nose cone.step");
+  assert.match(new TextDecoder().decode(step.bytes.slice(0, 20)), /^ISO-10303-21/);
+  const stl = await session.partFile(key("Trapezoidal fin set"), "stl");
+  assert.equal(stl.name, "Trapezoidal fin set (print 3).stl");
+  const triangles = new DataView(stl.bytes.buffer, stl.bytes.byteOffset).getUint32(80, true);
+  assert.equal(stl.bytes.length, 84 + 50 * triangles, "binary STL");
+
+  session.setDetails(key("Printable nose cone"), HOLES);
+  const zip = await session.zip();
+  assert.equal(zip.name, "3d-printable-nose-cone-and-fins parts.zip");
+  const files = unzipSync(zip.bytes);
+  const names = Object.keys(files).sort();
+  assert.ok(names.includes("assembly.step") && names.includes("report.txt"));
+  assert.ok(names.includes("step/01 Printable nose cone.step") && names.includes("stl/05 Trapezoidal fin set (print 3).stl"));
+  assert.equal(names.filter((n) => n.startsWith("step/")).length, 10);
+  const report = strFromU8(files["report.txt"]);
+  assert.match(report, new RegExp(`detail: ${HOLES}`));
+
+  const saved = session.saveOrk();
+  assert.equal(saved.name, FILE);
+  const reopened = allParts(modelFromBytes(saved.bytes));
+  assert.equal(reopened.find((p) => p.name === "Printable nose cone")!.comment, HOLES);
+  const original = allParts(modelFromBytes(new Uint8Array(readFileSync(fixture(FILE)))));
+  for (const p of reopened.filter((p) => p.name !== "Printable nose cone")) {
+    assert.equal(p.comment, original.find((q) => q.id === p.id)!.comment, p.name);
+  }
+});

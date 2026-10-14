@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ork-cad</title>
+    <meta name="description" content="Turn OpenRocket designs into exact CAD parts for Onshape and 3D printing." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2c5 5 6 12 4 20h-8C10 14 11 7 16 2z' fill='%23e8833a'/%3E%3Cpath d='M12 22l-5 6 6-2m7-4l5 6-6-2' fill='%239aa4b1'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand"><strong>ork-cad</strong><span>OpenRocket → exact CAD parts</span></div>
+      <div class="actions">
+        <label class="button primary" for="file">Open .ork</label>
+        <input id="file" type="file" accept=".ork" hidden />
+        <button id="zip" disabled title="STEP and STL files for every part, one STEP with the whole rocket, and a report">Download all parts</button>
+        <button id="save" disabled title="Your design with the details you edited here saved into each part's comment">Save .ork</button>
+      </div>
+      <p id="status" role="status" aria-live="polite"></p>
+    </header>
+    <main>
+      <aside id="left" class="panel">
+        <h2>Parts</h2>
+        <ul id="parts"></ul>
+        <h2>Sealed spaces</h2>
+        <div id="spaces" class="muted">Open a design to see what's inside it and which holes vent each space.</div>
+      </aside>
+      <section id="stage">
+        <div id="canvas"></div>
+        <div id="toolbar" hidden>
+          <button id="fit">Fit</button>
+          <label><input id="cut" type="checkbox" /> Cut in half</label>
+          <label><input id="only" type="checkbox" /> Only selected</label>
+        </div>
+        <div id="welcome">
+          <h1>Drop an OpenRocket design here</h1>
+          <p>
+            Or use <strong>Open .ork</strong>. Every part comes out as exact CAD: real curves, not the triangles OpenRocket
+            exports. Download STEP files for Onshape (one tab per part) or STL files for your slicer.
+          </p>
+          <p class="muted">Your file never leaves this computer: everything runs in this page.</p>
+        </div>
+      </section>
+      <aside id="right" class="panel">
+        <div id="selected" class="muted"></div>
+      </aside>
+    </main>
+    <div id="drop" hidden>Drop the .ork file</div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
