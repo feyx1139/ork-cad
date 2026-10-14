@@ -400,6 +400,15 @@ function buildFin(p: FinSetPart, model: RocketModel, inst: Instance, warnings: s
   if (p.filletRadius > 0) {
     warnings.push(`${p.name}: root fillets aren't built yet.`);
   }
+  if (Math.abs(p.tabMoved) >= 0.01) {
+    const by = Number(Math.abs(p.tabMoved).toFixed(2));
+    warnings.push(
+      `${p.name}: OpenRocket opens this file with the fin tab ${by} mm further ${p.tabMoved < 0 ? "forward" : "back"} than its saved ` +
+        `position (an OpenRocket bug with elliptical fins: it places the tab as if the fin were 50 mm long). ` +
+        `The tab here is where OpenRocket shows and simulates it. Each time the file is opened and saved in OpenRocket the tab ` +
+        `moves again; measuring the tab's position from the fin's front (top) in OpenRocket stops that.`,
+    );
+  }
   // Fin plane at angle 0: X = body radius + span coordinate, Z = fore end - chord coordinate.
   const ztop = model.length - inst.x;
   const R = p.bodyRadius;

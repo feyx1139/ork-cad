@@ -1,6 +1,6 @@
 # Test rockets
 
-These are example designs that come with OpenRocket 24.12, copied
+Four of these are example designs that come with OpenRocket 24.12, copied
 unchanged from `datafiles/examples/` in OpenRocket's jar. OpenRocket and its examples are free
 software under the GNU GPL v3 (https://openrocket.info).
 
@@ -10,6 +10,10 @@ software under the GNU GPL v3 (https://openrocket.info).
 | `arc-payload-rocket.ork` | ARC payload rocket |
 | `base-drag-hack.ork` | Base drag hack (short-wide) |
 | `dual-parachute-deployment.ork` | Dual parachute deployment |
+
+`fin-tabs.ork` was written for these tests: a body tube with eight fin sets, one for each way
+OpenRocket places a fin tab when it opens a file (trapezoidal, elliptical and freeform fins; tabs
+measured from the front, middle or bottom; fins shorter than OpenRocket's 50 mm default).
 
 Each `.openrocket.json` and `.openrocket.obj` next to them is what OpenRocket itself computes for
 that design (positions, lengths, volumes, masses) and its OBJ export, made with

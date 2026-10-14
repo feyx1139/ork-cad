@@ -1,9 +1,11 @@
 # ork-cad
 
-Turns OpenRocket designs (`.ork`) into exact CAD parts for 3D printing and Onshape: real curved
-surfaces (STEP), not the triangle mesh OpenRocket's own export makes. Holes, pockets, nut traps and
-other print details that OpenRocket can't model are added from lines in each part's comment. The
-parts are checked against OpenRocket itself. It runs as a website and as a command-line tool, and
+Turns OpenRocket designs (`.ork`) into parts ready for 3D printing: STL files made from exact CAD
+(real curves, cut into triangles within 0.01 mm), not the coarse mesh OpenRocket's own export
+makes, and exact STEP files for Onshape when you want to edit a part. Holes, pockets, nut traps and
+other print details that OpenRocket can't model are added from lines in each part's comment. A
+part you made in CAD yourself can be compared with the design, and the changes that make the design
+match it are worked out for you. The parts are checked against OpenRocket itself. It runs as a website and as a command-line tool, and
 both use the same code in `src/`.
 
 Needs Node.js 24 or newer. To run it from a copy of this repository:
@@ -24,10 +26,15 @@ Then open http://localhost:5173. Open or drop an `.ork`, and the parts appear in
 - **Clicking a part:** shows its details editor. Type detail lines (see below), press **Apply**, and
   the part rebuilds.
 - **Cut in half:** shows walls, pockets and vents from the inside.
+- **Compare with your CAD file:** for a nose cone or transition, pick a STEP or STL file of the real
+  part. The page lists what to change in OpenRocket and which detail lines to add, checks the
+  result against your file, and **Make these changes** puts them into the design (see
+  [Comparing with a part made in CAD](#comparing-with-a-part-made-in-cad)).
 - **Downloads:**
-  - **STEP / STL:** for the selected part. The STL holds one copy, ready for the slicer.
-  - **Download all parts:** a zip with every STEP and STL, the whole rocket as one STEP, and a
-    report.
+  - **STL:** the selected part, ready for the slicer. It holds one copy; a fin set's file is one
+    fin, and its name says how many to print.
+  - **STEP:** the selected part with exact surfaces (every copy in its place), to edit in Onshape.
+  - **Download all parts:** a zip with an STL for every part and a report.
   - **Save .ork:** your design with the details written into each part's comment. OpenRocket opens
     it as usual.
 
@@ -43,15 +50,45 @@ npm run export -- my-rocket.ork
 ```
 
 That writes `out/my-rocket/`:
-- one STEP file per part (all copies of a part, such as every fin, in one file);
-- `assembly.step` with the whole rocket;
+- one STL file per part, numbered nose to tail (one copy of the part; a fin set's file is one fin,
+  named with how many to print);
 - `report.txt` with each part's volume and its mass at the material set in OpenRocket, plus the
   sealed spaces.
 
-**Onshape:** in a document, **+ → Import** and pick all the part files; each becomes its own tab.
-Every part is already in its place on the rocket: the rocket's axis is Z and the nose tip is at
-Z = the rocket's length, as in OpenRocket's own OBJ export. `assembly.step` has the whole rocket in
-one file. From Onshape you can export STL at any resolution for printing.
+Every part is in its place on the rocket: the rocket's axis is Z and the nose tip is at Z = the
+rocket's length, as in OpenRocket's own OBJ export. Slicers move parts onto the bed by themselves.
+
+**Onshape:** Onshape imports an STL as a mesh, which you can look at and measure but not edit like a
+solid. To edit parts there, add `--step` (`npm run export -- my-rocket.ork --step`): that also
+writes a STEP file per part with every copy in place and exact curved surfaces, and
+`assembly.step` with the whole rocket. In a document, **+ → Import** and pick the STEP files;
+each becomes its own tab.
+
+## Comparing with a part made in CAD
+
+If a nose cone or transition was drawn by hand (in Onshape, say), ork-cad can work out what to
+change in the design so it makes that part, instead of you measuring it and typing it in:
+
+```
+npm run match -- my-rocket.ork "Nose cone" nose.step --write my-rocket-matched.ork
+```
+
+Export the part from Onshape as STEP (right-click it, **Export**) or STL; either works, in any
+units and any position. ork-cad finds the part's axis and outline and reports:
+- **Changes for OpenRocket:** shoulder diameters and lengths, the body's length and end radii, and
+  **Filled** if the part is solid. A radius OpenRocket sets to "auto" (from the tube next to it) is
+  left alone, with a note if the file differs.
+- **Detail lines:** chamfers and rounds on the shoulders' ends, rings of side holes, pockets
+  (round or rectangular) and nut traps in the end faces.
+- **A check:** it builds the part with all of that and compares the two surfaces point by point.
+  Either it matches (for example "no point of either surface is more than 0.024 mm from the other")
+  or it lists where they still differ, such as a shape it doesn't recognise yet.
+
+`--write` saves a copy of the design with the changes made; the website's **Make these changes**
+does the same. Angles around the axis are measured from the file's X axis, which is taken as the
+direction of the first fin. A transition the same size at both ends can't show which end is the
+fore end, so the end toward the file's +Z is taken (as in Onshape when the nose points up);
+`--flip` (or **Compare the other way round**) takes the other end.
 
 ## Details OpenRocket can't model
 
@@ -99,8 +136,11 @@ eyebolt, a lead-in on the aft shoulder and a rounded fore rim.
     `hole`, `flats`, `thickness` and `bolt` (screw hole depth; default 3 mm past the nut).
 - **`@chamfer`** bevels the outside edge at an end, e.g. a lead-in so a shoulder slides into its
   tube.
-  - `length`: how far along the axis it goes.
-  - `angle`: measured from the axis (default 45).
+  - `length`: how far along the axis it goes, or `inset`: how far in from the outside it cuts at
+    the end face, the way a sketch would dimension it. Give one of the two. `inset=3` on a 65 mm
+    shoulder leaves a 59 mm end face.
+  - `angle`: measured from the axis (default 45). At 45 or less, the bevel prints without supports
+    when the part stands on that end.
   - `round`: an optional radius that blends the start of the bevel.
 - **`@round`** rounds the outside edge at an end with `radius`.
 - **Solid parts:** pockets and nut traps need a solid part. Tick **Filled** for the part in
@@ -149,6 +189,11 @@ Sizes set to "auto" in OpenRocket are worked out the way OpenRocket 24.12 does: 
 neighbouring body parts (across stages too), rings and bulkheads from the tube they sit in, and
 packed parachutes from their tube, keeping their packed volume.
 
+Fin tabs go where OpenRocket 24.12 puts them when it opens the file. For elliptical fins that isn't
+where the saved position says: OpenRocket places the tab as if the fin were 50 mm long, and every
+time the file is opened and saved there, the tab moves again. The part follows OpenRocket and a note
+says so. Measuring the tab's position from the fin's front (top) in OpenRocket avoids the problem.
+
 Not supported yet (those parts are listed as not built, with the reason): pods and side boosters,
 motor clusters, flipped nose cones (tail cones), canted fins, fins on a nose cone or transition,
 tube fins. Rounded or airfoil fin edges are built square for now, and fin fillets aren't built yet
@@ -158,8 +203,9 @@ out as a separate piece (with a note).
 
 ## How it's checked
 
-`npm test` runs these checks on four of the example rockets that come with OpenRocket 24.12 (in
-`test/fixtures/`), and on any designs of your own in `test/private/fixtures/`, a folder git ignores.
+`npm test` runs these checks on four of the example rockets that come with OpenRocket 24.12 and on
+a test rocket with one fin set for each way OpenRocket places a fin tab (all in `test/fixtures/`),
+and on any designs of your own in `test/private/fixtures/`, a folder git ignores.
 
 - **Positions:** every component sits exactly where OpenRocket puts it (all copies, to 0.000001 mm),
   and the rocket's length is OpenRocket's, which counts fins or a motor tube reaching past the
@@ -179,21 +225,30 @@ out as a separate piece (with a note).
   clipped transitions, follow OpenRocket's formulas to 0.0001 mm inside and out, have the exact wall
   volume (except where the wall is thicker than the shape's curvature at a sharp end, which is
   trimmed and reported), and come back unchanged from a STEP file.
+- **STL files:** every one is a closed surface (each edge joins exactly two triangles, facing
+  opposite ways), its corners lie on the exact surface (to 0.0001 mm), and its volume is within
+  what the 0.01 mm triangle allowance can change (0.01–0.07% for nose cones).
 - **STEP files:** every file re-imports with the same volume, number of solids and position.
 - **Details:**
   - Side holes through a curved nose cone wall remove exactly the material worked out by
     integration, and end holes through a cap or bulkhead exactly their volume.
-  - Pockets, a rounded rim, a rounded lead-in chamfer and a captive nut (with its slot and screw
-    hole) cut into the ARC example's solid balsa nose cone each remove exactly the volume worked out
-    by hand, and vents open into the pocket.
+  - Pockets, a rounded rim, rounded lead-in chamfers (given by length or by inset) and a captive
+    nut (with its slot and screw hole) cut into the ARC example's solid balsa nose cone each remove
+    exactly the volume worked out by hand, and vents open into the pocket.
   - Mistakes in detail lines are refused with a reason.
+- **Comparing with CAD files:** parts built with known changes (a longer, narrower shoulder with a
+  rounded lead-in, side holes through a curved wall, pockets, a nut trap, a rounded rim, Filled),
+  written as STEP and as STL, moved, turned, tilted and in inches, compared with the design: each
+  time it finds exactly those changes again, the part built with them matches the file, and the
+  design written with them builds the same part.
 - **Sealed spaces:** the ARC example's spaces, with an altimeter in its payload bay: the vent
   warning, the vents, ejection gas through a bulkhead, and the air volume.
 - **Edited files:** `.ork` files change only the comment, and OpenRocket itself opens them and reads
   the comment back (that check is skipped where OpenRocket isn't installed).
 - **Website:** the website's session opens the 3D-printable example, meshes every part, edits
-  details (including bad ones, which are shown next to the part), and makes every download, all
-  checked in Node.
+  details (including bad ones, which are shown next to the part), makes every download, and
+  compares the nose cone with an STL of a changed one and takes the changes on, all checked in
+  Node.
 
 The reference data in `test/fixtures/*.openrocket.*` comes from OpenRocket itself, made headlessly
 with OpenRocket's own Java runtime and jar by `tools/openrocket-ref/RefExport.java`. To add a design
@@ -234,7 +289,11 @@ Found while building the tests:
   them (`holes.ts`, `cuts.ts`; `apply.ts` runs them all).
 - `src/checks/compartments.ts`: the sealed spaces and the vent checks.
 - `src/ork/write.ts`: writes a component comment back into an `.ork`.
-- `src/export/step.ts`, `report.ts`: write the STEP files and the report.
+- `src/export/files.ts`, `report.ts`: write the STL and STEP files and the report
+  (`src/geometry/stl.ts` reads and writes STL).
+- `src/match/`: comparing a part with a CAD file: reading it and finding its axis and outline
+  (`cad.ts`), working out the changes and checking them (`compare.ts`), and surface distances
+  (`distance.ts`).
 - `web/`: the website.
   - `main.ts`: the page.
   - `viewer.ts`: the 3D view (three.js).

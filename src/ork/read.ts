@@ -113,7 +113,7 @@ function readNode(el: XmlElement): OrkNode {
   return node;
 }
 
-function childElements(el: XmlElement): XmlElement[] {
+export function childElements(el: XmlElement): XmlElement[] {
   const out: XmlElement[] = [];
   for (let i = 0; i < el.childNodes.length; i++) {
     const n = el.childNodes[i];
@@ -122,7 +122,7 @@ function childElements(el: XmlElement): XmlElement[] {
   return out;
 }
 
-function attributesOf(el: XmlElement): Record<string, string> {
+export function attributesOf(el: XmlElement): Record<string, string> {
   const out: Record<string, string> = {};
   for (let i = 0; i < el.attributes.length; i++) {
     const a = el.attributes[i];

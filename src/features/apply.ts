@@ -7,7 +7,6 @@ import { endHoleTools, sideHoleTools } from "./holes.ts";
 import { edgeTool, nutTrapTools, pocketTool } from "./cuts.ts";
 
 export function cutFeatures(part: Part, model: RocketModel, inst: Instance, solid: Shape3D, warnings: string[]): Shape3D {
-  let tool: Shape3D | undefined;
   for (const f of part.features) {
     let tools: Shape3D[];
     try {
@@ -16,9 +15,12 @@ export function cutFeatures(part: Part, model: RocketModel, inst: Instance, soli
       if (e instanceof FeatureError) throw new FeatureError(`${part.name}, "${f.source}": ${e.message}`);
       throw e;
     }
-    for (const t of tools) tool = tool ? tool.fuse(t) : t;
+    // One cut per tool. Fusing the tools first and cutting once can lose a piece: a ring of side
+    // holes fused with a pocket they open into dropped one of the holes, and cutting overlapping
+    // tools in one go removed too much. One at a time, every cut is a simple one.
+    for (const t of tools) solid = solid.cut(t);
   }
-  return tool ? solid.cut(tool) : solid;
+  return solid;
 }
 
 function toolsFor(part: Part, model: RocketModel, inst: Instance, f: Feature, warnings: string[]): Shape3D[] {

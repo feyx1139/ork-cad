@@ -56,13 +56,32 @@ async function handle(req: Request): Promise<void> {
         return sendFile(req.id, file.name, file.bytes);
       }
       case "zip": {
-        post({ type: "progress", text: "Making STEP and STL files for every part…" });
+        post({ type: "progress", text: "Making STL files for every part…" });
         const file = await need(session).zip();
         return sendFile(req.id, file.name, file.bytes);
       }
       case "save": {
         const file = need(session).saveOrk();
         return sendFile(req.id, file.name, file.bytes);
+      }
+      case "compare": {
+        const match = await need(session).compare(req.key, new Uint8Array(req.bytes), req.fileName, {
+          flip: req.flip,
+          progress: (text) => post({ type: "progress", text }),
+        });
+        post({ id: req.id, type: "match", match });
+        return;
+      }
+      case "applyMatch": {
+        const s = need(session);
+        s.applyMatch(req.key);
+        post({ type: "rocket", rocket: s.rocket, partCount: s.parts.length });
+        s.buildAll((part, done, total) => {
+          post({ type: "progress", text: `Building ${part.name} (${done} of ${total})…` });
+          sendPart(part, done, total);
+        });
+        post({ type: "spaces", spaces: s.spaces() });
+        break;
       }
     }
     post({ id: req.id, type: "done" });

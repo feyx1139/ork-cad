@@ -98,7 +98,7 @@ export function edgeTool(part: Part, model: RocketModel, inst: Instance, f: Cham
   } else {
     const { length, angle, round: rho } = f;
     if (length > face.straight) {
-      throw new FeatureError(`a ${fmt(length)} mm chamfer is longer than the ${fmt(face.straight)} mm straight section`);
+      throw new FeatureError(`the chamfer runs ${fmt(length)} mm along the part, more than the ${fmt(face.straight)} mm straight section`);
     }
     if (rho * Math.sin(angle) > length) throw new FeatureError("the round at the start of the chamfer is too big for its length");
     // Starts on the side `length` from the end, optionally curving in with radius `round`, then

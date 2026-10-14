@@ -1,5 +1,6 @@
 // The website's design session (web/session.ts), run in Node on OpenRocket's "3D printable nose
-// cone and fins" example: open it, build and mesh its parts, edit details, and make every download.
+// cone and fins" example: open it, build and mesh its parts, edit details, make every download, and
+// compare a part with a CAD file of the real part and take on its changes.
 
 import { before, test } from "node:test";
 import assert from "node:assert/strict";
@@ -10,6 +11,10 @@ import { initOpenCascadeNode, modelFromBytes, xmlTools } from "../src/node/load.
 import { allParts, type TransitionPart } from "../src/ork/model.ts";
 import { fixture } from "./helpers.ts";
 import { wallVolume } from "./volumes.ts";
+import { parseFeatures } from "../src/features/parse.ts";
+import { buildPart } from "../src/geometry/parts.ts";
+import { solidVolume } from "../src/geometry/measure.ts";
+import { stlOf } from "../src/export/files.ts";
 
 before(() => initOpenCascadeNode());
 
@@ -110,11 +115,16 @@ test("downloads: one part, everything in a zip, and the .ork with details", asyn
   assert.equal(zip.name, "3d-printable-nose-cone-and-fins parts.zip");
   const files = unzipSync(zip.bytes);
   const names = Object.keys(files).sort();
-  assert.ok(names.includes("assembly.step") && names.includes("report.txt"));
-  assert.ok(names.includes("step/01 Printable nose cone.step") && names.includes("stl/05 Trapezoidal fin set (print 3).stl"));
-  assert.equal(names.filter((n) => n.startsWith("step/")).length, 10);
+  assert.equal(names.filter((n) => n.endsWith(".stl")).length, 10, "an STL for every part");
+  assert.ok(names.includes("01 Printable nose cone.stl") && names.includes("05 Trapezoidal fin set (print 3).stl"));
+  assert.deepEqual(
+    names.filter((n) => !n.endsWith(".stl")),
+    ["report.txt"],
+    "nothing but the STL files and the report",
+  );
   const report = strFromU8(files["report.txt"]);
   assert.match(report, new RegExp(`detail: ${HOLES}`));
+  assert.match(report, /05 Trapezoidal fin set \(print 3\)\.stl {2}[\d.]+ cm³ each, 3 = /);
 
   const saved = session.saveOrk();
   assert.equal(saved.name, FILE);
@@ -124,4 +134,29 @@ test("downloads: one part, everything in a zip, and the .ork with details", asyn
   for (const p of reopened.filter((p) => p.name !== "Printable nose cone")) {
     assert.equal(p.comment, original.find((q) => q.id === p.id)!.comment, p.name);
   }
+});
+
+test("comparing the nose cone with an STL of the real one, and taking on its changes", async () => {
+  const { session, key } = open();
+  const nose = session.part(key("Printable nose cone")) as TransitionPart;
+  // The real one has a 25 mm shoulder and three vents.
+  const lines = "@side-holes count=3 diameter=2 at=60 angle=45";
+  const real = buildPart(
+    { ...nose, aftShoulder: { ...nose.aftShoulder, length: 25 }, features: parseFeatures(lines).features },
+    session.model,
+  )!.solids[0];
+  const m = await session.compare(key("Printable nose cone"), stlOf(real, "nose"), "nose.stl");
+  assert.deepEqual(m.changes.map((c) => [c.field, c.from, c.to]), [["aftshoulderlength", "20 mm", "25 mm"]]);
+  assert.deepEqual(m.added, [lines]);
+  assert.deepEqual(m.check.differences, []);
+  assert.match(m.text, /Aft shoulder length: 20 mm → 25 mm/);
+
+  session.applyMatch(key("Printable nose cone"));
+  assert.ok(session.hasEdits);
+  const views = session.buildAll();
+  const now = views.find((v) => v.name === "Printable nose cone")!;
+  assert.equal(now.details, lines);
+  assert.ok(Math.abs(now.volume / solidVolume(real) - 1) < 1e-9, `${now.volume} vs ${solidVolume(real)}`);
+  const saved = allParts(modelFromBytes(session.saveOrk().bytes)).find((p) => p.name === "Printable nose cone") as TransitionPart;
+  assert.ok(Math.abs(saved.aftShoulder.length - 25) < 1e-9 && saved.comment === lines);
 });

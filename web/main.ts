@@ -1,9 +1,10 @@
-// The page: open or drop an .ork, see the parts in 3D, edit a part's details, and download.
+// The page: open or drop an .ork, see the parts in 3D, edit a part's details, compare a part with
+// a CAD file of the real thing, and download.
 // All the CAD work happens in worker.ts.
 
 import { Viewer } from "./viewer.ts";
 import type { Message, RequestBody } from "./protocol.ts";
-import type { PartView, SpacesView } from "./session.ts";
+import type { MatchView, PartView, SpacesView } from "./session.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const statusEl = $("status");
@@ -19,6 +20,9 @@ const viewer = new Viewer($("canvas"));
 const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
 
 const parts = new Map<string, PartView>();
+/** The last comparison of each part with a CAD file, and the file (to compare it the other way round). */
+const matches = new Map<string, MatchView>();
+const cadFiles = new Map<string, { file: File; flip: boolean }>();
 const hidden = new Set<string>();
 let selected: string | null = null;
 let unsaved = false;
@@ -72,6 +76,8 @@ worker.onerror = (e) => setStatus(`The CAD engine stopped: ${e.message}`, true);
 async function open(file: File): Promise<void> {
   if (unsaved && !confirm("Your detail changes aren't saved. Open another design anyway?")) return;
   parts.clear();
+  matches.clear();
+  cadFiles.clear();
   hidden.clear();
   selected = null;
   unsaved = false;
@@ -223,7 +229,7 @@ function showSelected(): void {
     </dl>
     <ul class="messages"></ul>
     <label for="details"><strong>Details</strong> <span class="muted">— holes, pockets, nut traps…</span></label>
-    <textarea id="details" rows="6" spellcheck="false" placeholder="@side-holes count=8 diameter=2 at=5"></textarea>
+    <textarea id="details" rows="6" spellcheck="false" placeholder="@side-holes count=4 diameter=2 at=10"></textarea>
     <div class="row">
       <button id="apply" class="primary">Apply</button>
       <span class="muted">Ctrl+Enter</span>
@@ -233,14 +239,26 @@ function showSelected(): void {
       <pre></pre>
       <p>Lengths are mm unless you write <code>in</code> or <code>cm</code> (e.g. <code>1/8in</code>). Angles are degrees, and
       <code>angle=0</code> lines up with the first fin. <code>at</code> is measured from the fore end of the part's body;
-      a negative <code>at</code> goes into its fore shoulder. Pockets and nut traps need the part to be solid: tick
+      a negative <code>at</code> goes into its fore shoulder. A chamfer can be given by its <code>inset</code> (how far in
+      it cuts at the end face) instead of its <code>length</code>. Pockets and nut traps need the part to be solid: tick
       <em>Filled</em> for it in OpenRocket. The details are saved into the part's comment when you save the .ork.</p>
     </details>
     <h3>Download this part</h3>
     <div class="row">
-      <button data-format="step">STEP (for Onshape)</button>
-      <button data-format="stl">STL (for printing)</button>
-    </div>`;
+      <button data-format="stl" class="primary">STL (for printing)</button>
+      <button data-format="step" title="Exact curved surfaces, every copy in its place on the rocket">STEP (to edit in Onshape)</button>
+    </div>
+    <section class="compare" hidden>
+      <h3>Compare with your CAD file</h3>
+      <p class="muted">Made this part in Onshape or another CAD program? Export it as STEP or STL (in Onshape:
+      right-click the part, Export) and pick the file. ork-cad works out what to change in the design so it
+      makes that part, and checks the result.</p>
+      <div class="row">
+        <label class="button" for="cad">Choose a STEP or STL file…</label>
+        <input id="cad" type="file" accept=".step,.stp,.stl" hidden />
+      </div>
+      <div class="match"></div>
+    </section>`;
   selectedEl.querySelector("h2")!.textContent = p.name;
   const field = (f: string) => selectedEl.querySelector<HTMLElement>(`[data-f="${f}"]`)!;
   field("type").textContent = `${p.type}${p.copies > 1 ? `, ${p.copies} copies` : ""}`;
@@ -277,8 +295,118 @@ function showSelected(): void {
   });
   for (const b of selectedEl.querySelectorAll<HTMLButtonElement>("button[data-format]")) {
     b.disabled = !p.mesh;
-    b.addEventListener("click", () => void download({ type: "file", key: p.key, format: b.dataset.format as "step" | "stl" }, b));
+    b.addEventListener("click", () => void download({ type: "file", key: p.key, format: b.dataset.format as "stl" | "step" }, b));
   }
+  selectedEl.querySelector<HTMLElement>(".compare")!.hidden = !p.mesh || (p.type !== "nosecone" && p.type !== "transition");
+  const cad = selectedEl.querySelector<HTMLInputElement>("#cad")!;
+  cad.addEventListener("change", () => {
+    const file = cad.files?.[0];
+    cad.value = "";
+    if (file) void compare(p, file);
+  });
+  const shown = matches.get(p.key);
+  if (shown) showMatch(shown);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Comparing a part with a CAD file
+
+async function compare(p: PartView, file: File, flip = false): Promise<void> {
+  setStatus(`Comparing ${p.name} with ${file.name}…`);
+  cadFiles.set(p.key, { file, flip });
+  const bytes = await file.arrayBuffer();
+  const reply = await request({ type: "compare", key: p.key, bytes, fileName: file.name, flip }, [bytes]);
+  if (reply.type === "error") return setStatus(`Couldn't compare ${p.name} with ${file.name}: ${reply.message}`, true);
+  if (reply.type !== "match") return;
+  const m = reply.match;
+  matches.set(p.key, m);
+  if (selected === p.key) showMatch(m);
+  const count = m.changes.length + m.added.length + m.removed.length;
+  setStatus(count ? `${p.name}: ${count} change${count > 1 ? "s" : ""} to make it match ${file.name}.` : `${p.name} already matches ${file.name}.`);
+}
+
+function showMatch(m: MatchView): void {
+  const box = selectedEl.querySelector<HTMLElement>(".match");
+  if (!box) return;
+  box.replaceChildren();
+  const add = (tag: string, text: string, cls = "") => {
+    const el = document.createElement(tag);
+    el.textContent = text;
+    if (cls) el.className = cls;
+    box.append(el);
+    return el;
+  };
+  const list = (items: string[], cls = "") => {
+    const ul = document.createElement("ul");
+    if (cls) ul.className = "messages";
+    for (const text of items) {
+      const li = document.createElement("li");
+      li.textContent = text;
+      if (cls) li.className = cls;
+      ul.append(li);
+    }
+    box.append(ul);
+  };
+  add("p", `Compared with ${m.file}:`, "muted");
+  if (m.changes.length) {
+    add("h4", "Change in OpenRocket");
+    list(m.changes.map((c) => `${c.label}: ${c.from} → ${c.to}`));
+  }
+  if (m.added.length) {
+    add("h4", "Detail lines to add");
+    add("pre", m.added.join("\n"));
+  }
+  if (m.removed.length) {
+    add("h4", "Detail lines to take out");
+    add("pre", m.removed.join("\n"));
+  }
+  const count = m.changes.length + m.added.length + m.removed.length;
+  if (!count) add("p", "Nothing to change.");
+  if (m.notes.length) list(m.notes, "note");
+  const c = m.check;
+  const volumes = `${(c.fileVolume / 1000).toFixed(2)} cm³ in the file, ${(c.builtVolume / 1000).toFixed(2)} cm³ built`;
+  if (c.differences.length) {
+    add("p", `With ${count ? "these changes" : "the design as it is"}, it still differs from the file (${volumes}):`, "warn");
+    list(c.differences, "warn");
+  } else {
+    add("p", `With ${count ? "these changes" : "the design as it is"}, it matches the file: no point of either surface is more than ${c.maxDistance.toFixed(3)} mm from the other (${volumes}).`, "ok");
+  }
+  const row = document.createElement("div");
+  row.className = "row";
+  if (count) {
+    const b = document.createElement("button");
+    b.className = "primary";
+    b.textContent = "Make these changes";
+    b.addEventListener("click", () => void applyMatch(m, b));
+    row.append(b);
+  }
+  const again = cadFiles.get(m.key);
+  const part = parts.get(m.key);
+  // A nose cone's tip says which end is which; a transition the same size at both ends doesn't.
+  if (again && part && part.type === "transition") {
+    const b = document.createElement("button");
+    b.textContent = "Compare the other way round";
+    b.title = "Take the other end of the file's part as its fore end";
+    b.addEventListener("click", () => void compare(part, again.file, !again.flip));
+    row.append(b);
+  }
+  box.append(row);
+}
+
+async function applyMatch(m: MatchView, button: HTMLButtonElement): Promise<void> {
+  button.disabled = true;
+  setStatus(`Changing ${m.part}…`);
+  const reply = await request({ type: "applyMatch", key: m.key });
+  if (reply.type === "error") {
+    button.disabled = false;
+    return setStatus(reply.message, true);
+  }
+  matches.clear();
+  cadFiles.clear();
+  unsaved = true;
+  saveButton.disabled = false;
+  showSelected();
+  setStatus(`${m.part} now matches ${m.file}. Save .ork to keep the changes.`);
 }
 
 // ---------------------------------------------------------------------------------------------

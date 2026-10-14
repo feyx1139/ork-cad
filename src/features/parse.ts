@@ -72,7 +72,7 @@ export interface NutTrap {
 export interface Chamfer {
   kind: "chamfer";
   end: "fore" | "aft";
-  /** How far along the axis the chamfer reaches, mm. */
+  /** How far along the axis the chamfer reaches, mm (worked out from `inset` when that's given). */
   length: number;
   /** Angle from the rocket axis, radians (smaller = longer, gentler lead-in). */
   angle: number;
@@ -98,7 +98,7 @@ const KEYS: Record<Feature["kind"], string[]> = {
   "end-holes": ["count", "diameter", "radius", "end", "angle"],
   pocket: ["size", "diameter", "depth", "corner", "end", "angle"],
   "nut-trap": ["size", "depth", "end", "angle", "bolt", "hole", "flats", "thickness"],
-  chamfer: ["end", "length", "angle", "round"],
+  chamfer: ["end", "length", "inset", "angle", "round"],
   round: ["end", "radius"],
 };
 
@@ -206,7 +206,23 @@ const PARSERS: Record<Feature["kind"], (args: Args, source: string) => Feature> 
     if (angle <= 0 || angle >= Math.PI / 2) throw new FeatureError("angle must be between 0 and 90 degrees (from the rocket's axis)");
     const round = args.has("round") ? lengthArg(args, "round") : 0;
     if (round < 0) throw new FeatureError("round can't be negative");
-    return { kind: "chamfer", end: requiredEnd(args), length: positive(args, "length"), angle, round, source };
+    if (args.has("length") && args.has("inset")) throw new FeatureError("give either length or inset, not both");
+    let length: number;
+    if (args.has("inset")) {
+      // How far in it cuts at the end face, as a sketch would dimension it: the round turns in by
+      // round * (1 - cos angle), and the straight part covers the rest at `angle` from the axis.
+      const inset = positive(args, "inset");
+      const turn = round * (1 - Math.cos(angle));
+      if (inset < turn - 1e-9) {
+        throw new FeatureError(`the round is too big for the inset: on its own it already goes ${Number(turn.toFixed(2))} mm in`);
+      }
+      length = round * Math.sin(angle) + Math.max(0, inset - turn) / Math.tan(angle);
+    } else if (args.has("length")) {
+      length = positive(args, "length");
+    } else {
+      throw new FeatureError("give a length (how far along the axis it goes) or an inset (how far in it cuts at the end)");
+    }
+    return { kind: "chamfer", end: requiredEnd(args), length, angle, round, source };
   },
   round: (args, source) => ({ kind: "round", end: requiredEnd(args), radius: positive(args, "radius"), source }),
 };

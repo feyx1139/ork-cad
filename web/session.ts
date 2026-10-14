@@ -1,18 +1,27 @@
 // The design the website is working on: opening it, building and meshing its parts, editing their
-// details, and making the downloads. It has no page or worker code in it, so it runs (and is
+// details, comparing a part with a CAD file of the real thing, and making the downloads. It has no page or worker code in it, so it runs (and is
 // tested) in Node as well as in the browser's worker. OpenCASCADE must already be loaded.
 
-import { exportSTEP, type Shape3D } from "replicad";
+import type { Shape3D } from "replicad";
 import { strToU8, zipSync } from "fflate";
 import { readOrk, type XmlDocument } from "../src/ork/read.ts";
-import { allParts, buildModel, type Part, type RocketModel } from "../src/ork/model.ts";
+import { allParts, buildModel, type Part, type RocketModel, type TransitionPart } from "../src/ork/model.ts";
 import { setComment, type XmlTools } from "../src/ork/write.ts";
 import { FeatureError, parseFeatures } from "../src/features/parse.ts";
 import { buildPart } from "../src/geometry/parts.ts";
 import { solidVolume } from "../src/geometry/measure.ts";
 import { findCompartments } from "../src/checks/compartments.ts";
-import { safeFileName } from "../src/export/step.ts";
+import { safeFileName, stepOf, stlName, stlOf } from "../src/export/files.ts";
 import { reportText } from "../src/export/report.ts";
+import { readCad } from "../src/match/cad.ts";
+import { applyMatch, matchPart, matchText, type MatchResult } from "../src/match/compare.ts";
+
+/** A comparison of a part with a CAD file, for the page. */
+export interface MatchView extends MatchResult {
+  key: string;
+  /** The whole result in words. */
+  text: string;
+}
 
 /** Triangles for a part's surfaces and line segments for its edges, in the rocket's frame (mm). */
 export interface PartMesh {
@@ -70,9 +79,8 @@ export interface FileOut {
   bytes: Uint8Array;
 }
 
-/** Fine enough to look smooth on screen; STL files for printing use the finer one. */
+/** Fine enough to look smooth on screen; STL files for printing use the finer PRINT_MESH (src/export/files.ts). */
 const VIEW_MESH = { tolerance: 0.05, angularTolerance: 0.2 };
-const PRINT_MESH = { tolerance: 0.01, angularTolerance: 0.05 };
 const PRINTED = /PLA|PETG|ABS|ASA|nylon|resin|print/i;
 
 export class Session {
@@ -80,8 +88,11 @@ export class Session {
   private views = new Map<string, PartView>();
   private edited = new Set<string>();
   private keys = new Map<Part, string>();
-  readonly rocket: RocketView;
-  readonly model: RocketModel;
+  private matches = new Map<string, MatchResult>();
+  /** Changes made from a comparison, which are in `bytes` but not saved yet. */
+  private changed = false;
+  rocket: RocketView;
+  model: RocketModel;
   private bytes: Uint8Array;
   private xml: XmlTools;
 
@@ -90,14 +101,25 @@ export class Session {
     this.bytes = bytes;
     this.model = model;
     this.xml = xml;
-    // The OpenRocket id where there is one (all files from OpenRocket 22+), otherwise the position.
-    allParts(model).forEach((p, i) => this.keys.set(p, p.id || `part-${i}`));
+    this.keyParts();
   }
 
   static open(bytes: Uint8Array, fileName: string, xml: XmlTools): Session {
-    const file = readOrk(bytes, (text) => xml.parse(text) as unknown as XmlDocument);
-    const model = buildModel(file, { keepDetailErrors: true });
+    const model = Session.read(bytes, xml);
     return new Session({ name: model.name, fileName, length: model.length, creator: model.creator }, bytes, model, xml);
+  }
+
+  private static read(bytes: Uint8Array, xml: XmlTools): RocketModel {
+    return buildModel(
+      readOrk(bytes, (text) => xml.parse(text) as unknown as XmlDocument),
+      { keepDetailErrors: true },
+    );
+  }
+
+  private keyParts(): void {
+    // The OpenRocket id where there is one (all files from OpenRocket 22+), otherwise the position.
+    this.keys = new Map();
+    allParts(this.model).forEach((p, i) => this.keys.set(p, p.id || `part-${i}`));
   }
 
   /** Parts with a shape, in rocket order (mass components and recovery gear have none). */
@@ -106,7 +128,7 @@ export class Session {
   }
 
   get hasEdits(): boolean {
-    return this.edited.size > 0;
+    return this.edited.size > 0 || this.changed;
   }
 
   keyOf(part: Part): string {
@@ -212,40 +234,69 @@ export class Session {
     };
   }
 
-  /** One part as STEP (every copy, in place) or STL (one copy, for printing). */
-  async partFile(key: string, format: "step" | "stl"): Promise<FileOut> {
+  /** One part as STL (one copy, for printing) or STEP (every copy in place, exact, for Onshape). */
+  async partFile(key: string, format: "stl" | "step"): Promise<FileOut> {
     const part = this.part(key);
     const solids = this.solids.get(key) ?? [];
     if (!solids.length) throw new Error(`${part.name} has no shape to export.`);
     const base = safeFileName(part.name);
     if (format === "step") return { name: `${base}.step`, bytes: await bytesOf(stepOf(part, solids)) };
-    const copies = solids.length > 1 ? ` (print ${solids.length})` : "";
-    return { name: `${base}${copies}.stl`, bytes: await bytesOf(solids[0].blobSTL({ ...PRINT_MESH, binary: true })) };
+    return { name: stlName(base, solids.length), bytes: stlOf(solids[0], part.name) };
   }
 
-  /** Every part as STEP and STL, the whole rocket as one STEP, and report.txt. */
+  /** Every part as an STL for printing, and report.txt. */
   async zip(): Promise<FileOut> {
     const files: Record<string, Uint8Array> = {};
-    const assembly: { shape: Shape3D; name: string }[] = [];
     const reportParts = [];
     let n = 0;
     for (const part of this.parts) {
       const key = this.keyOf(part);
-      const solids = this.solids.get(key) ?? [];
       const view = this.views.get(key);
-      if (!solids.length || !view) continue;
-      const number = String(++n).padStart(2, "0");
-      const step = await this.partFile(key, "step");
+      if (!this.solids.get(key)?.length || !view) continue;
       const stl = await this.partFile(key, "stl");
-      files[`step/${number} ${step.name}`] = step.bytes;
-      files[`stl/${number} ${stl.name}`] = stl.bytes;
-      solids.forEach((s, i) => assembly.push({ shape: s.clone(), name: solids.length > 1 ? `${part.name} ${i + 1}` : part.name }));
-      reportParts.push({ ...view, fileName: `${number} ${step.name}`, details: view.details ? view.details.split("\n") : [] });
+      const fileName = `${String(++n).padStart(2, "0")} ${stl.name}`;
+      files[fileName] = stl.bytes;
+      reportParts.push({ ...view, fileName, details: view.details ? view.details.split("\n") : [] });
     }
-    files["assembly.step"] = await bytesOf(exportSTEP(assembly, { unit: "mm", modelUnit: "mm" }));
     files["report.txt"] = strToU8(reportText(this.model, reportParts, findCompartments(this.model)));
     const name = safeFileName(this.rocket.fileName.replace(/\.ork$/i, "")) || "rocket";
     return { name: `${name} parts.zip`, bytes: zipSync(files) };
+  }
+
+  /**
+   * Compares a nose cone or transition with a CAD file of the real part (STEP or STL), and works
+   * out what to change in the design so it makes that part. Nothing changes until applyMatch.
+   */
+  async compare(key: string, bytes: Uint8Array, fileName: string, options: { flip?: boolean; progress?: (text: string) => void } = {}): Promise<MatchView> {
+    const part = this.part(key);
+    if (part.kind !== "transition") throw new Error(`Only nose cones and transitions can be compared with a CAD file so far.`);
+    options.progress?.(`Reading ${fileName}…`);
+    const cad = await readCad(bytes, fileName);
+    const result = matchPart(this.model, part, cad, fileName, options);
+    this.matches.set(key, result);
+    return { ...result, key, text: matchText(result) };
+  }
+
+  /**
+   * Makes the changes from the last comparison of a part: its fields and detail lines change in
+   * the design, which is then read again (every part is rebuilt by buildAll).
+   */
+  applyMatch(key: string): void {
+    const result = this.matches.get(key);
+    if (!result) throw new Error("Compare the part with a CAD file first.");
+    const part = this.part(key) as TransitionPart;
+    // Detail lines edited on this page go in first, so none are lost.
+    const bytes = applyMatch(this.saveOrk().bytes, part, result, this.xml);
+    for (const list of this.solids.values()) for (const solid of list) solid.delete();
+    this.solids.clear();
+    this.views.clear();
+    this.edited.clear();
+    this.matches.clear();
+    this.bytes = bytes;
+    this.model = Session.read(bytes, this.xml);
+    this.rocket = { ...this.rocket, name: this.model.name, length: this.model.length };
+    this.keyParts();
+    this.changed = true;
   }
 
   /** The design with the edited detail lines written into the components' comments. */
@@ -262,13 +313,6 @@ export class Session {
 
 export function detailLines(comment: string): string[] {
   return comment.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith("@"));
-}
-
-function stepOf(part: Part, solids: Shape3D[]): Blob {
-  return exportSTEP(
-    solids.map((shape, i) => ({ shape, name: solids.length > 1 ? `${part.name} ${i + 1}` : part.name })),
-    { unit: "mm", modelUnit: "mm" },
-  );
 }
 
 async function bytesOf(blob: Blob): Promise<Uint8Array> {

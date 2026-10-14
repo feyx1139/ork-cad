@@ -65,7 +65,7 @@ test("detail lines: pockets, nut traps, chamfers and rounds", () => {
       "@pocket size=24x18 depth=40 corner=4",
       "@pocket diameter=20 depth=30 end=aft angle=90",
       "@nut-trap size=#8-32 depth=10",
-      "@nut-trap size=m4 depth=15 end=fore bolt=30 flats=7.4",
+      "@nut-trap size=m4 depth=14 end=fore bolt=30 flats=7.4",
       "@chamfer end=aft length=6 angle=30 round=3",
       "@round end=fore radius=1/8in",
     ].join("\n"),
@@ -89,6 +89,27 @@ test("detail lines: pockets, nut traps, chamfers and rounds", () => {
     ["@nut-trap size=M7 depth=5", /unknown size "M7"/],
     ["@chamfer length=5", /end is missing/],
     ["@chamfer end=aft length=5 angle=95", /between 0 and 90/],
+  ] as const;
+  for (const [line, message] of bad) {
+    const r = parseFeatures(line);
+    assert.equal(r.errors.length, 1, line);
+    assert.match(r.errors[0], message, line);
+  }
+});
+
+test("a chamfer can be given by how far in it cuts at the end", () => {
+  const [c] = parseFeatures("@chamfer end=aft inset=2 angle=30 round=3").features;
+  // The round turns in 3 (1 - cos 30); the straight part covers the rest of the 2 mm at 30 degrees.
+  const th = Math.PI / 6;
+  const expected = 3 * Math.sin(th) + (2 - 3 * (1 - Math.cos(th))) / Math.tan(th);
+  assert.ok(c.kind === "chamfer" && Math.abs(c.length - expected) < 1e-12 && c.round === 3, JSON.stringify(c));
+  const [plain] = parseFeatures("@chamfer end=fore inset=2").features;
+  assert.ok(plain.kind === "chamfer" && Math.abs(plain.length - 2) < 1e-12, "45 degrees without a round: as long as it is deep");
+
+  const bad = [
+    ["@chamfer end=aft", /a length .* or an inset/],
+    ["@chamfer end=aft length=5 inset=2", /either length or inset/],
+    ["@chamfer end=aft inset=1 round=5", /round is too big for the inset/],
   ] as const;
   for (const [line, message] of bad) {
     const r = parseFeatures(line);

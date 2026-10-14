@@ -6,6 +6,8 @@ import { round, type CompartmentReport } from "../checks/compartments.ts";
 
 export interface ReportPart {
   fileName: string;
+  /** How many of the part the rocket has (the STL file holds one). */
+  copies: number;
   /** mm³, all copies. */
   volume: number;
   density?: number;
@@ -20,7 +22,8 @@ export function reportText(model: RocketModel, parts: ReportPart[], spaces: Comp
   for (const p of parts) {
     const mass = p.density ? ` = ${(p.volume * 1e-6 * p.density).toFixed(1)} g at ${p.density} kg/m³` : "";
     const override = p.massOverride !== undefined ? ` (OpenRocket mass override: ${p.massOverride.toFixed(1)} g)` : "";
-    lines.push(`  ${p.fileName}  ${(p.volume / 1000).toFixed(2)} cm³${mass}${override}`);
+    const each = p.copies > 1 ? `${(p.volume / p.copies / 1000).toFixed(2)} cm³ each, ${p.copies} = ` : "";
+    lines.push(`  ${p.fileName}  ${each}${(p.volume / 1000).toFixed(2)} cm³${mass}${override}`);
     for (const d of p.details) lines.push(`    detail: ${d}`);
     for (const e of p.errors) lines.push(`    PROBLEM: ${e}`);
     for (const w of p.warnings) lines.push(`    note: ${w}`);

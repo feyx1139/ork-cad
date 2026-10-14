@@ -3,7 +3,7 @@
 // frame: x runs along the rocket axis from the nose tip toward the tail; y and z are radial,
 // and an angle of 0 points along +y, increasing toward +z.
 
-import type { OrkField, OrkFile, OrkNode } from "./read.ts";
+import { attributesOf, childElements, type OrkField, type OrkFile, type OrkNode } from "./read.ts";
 import { FeatureError, parseFeatures, type Feature } from "../features/parse.ts";
 import { transitionRadius } from "../geometry/shapes.ts";
 
@@ -81,6 +81,8 @@ export interface FinSetPart extends PartBase {
   outline: FinOutline;
   /** Tab below the root, in fin coordinates (x from the root's leading edge). */
   tab: { start: number; length: number; height: number } | null;
+  /** How far OpenRocket's tab is from where the file's tab position puts it on this fin, mm (see finTab). */
+  tabMoved: number;
   filletRadius: number;
   /** Radius of the body tube at the fin root, mm. */
   bodyRadius: number;
@@ -551,22 +553,7 @@ function finSet(node: OrkNode, parent: Part): FinSetPart {
   const rootChord = outline.shape === "freeform" ? outline.points[outline.points.length - 1][0] : outline.rootChord;
 
   const finCount = Math.round(optNumber(node, "fincount") ?? optNumber(node, "instancecount") ?? 1);
-  const tabHeight = optLength(node, "tabheight") ?? 0;
-  const tabLength = optLength(node, "tablength") ?? 0;
-  let tab: FinSetPart["tab"] = null;
-  if (tabHeight > 0 && tabLength > 0) {
-    const f = node.fields.get("tabposition");
-    const offset = f ? Number(f.text) * M : 0;
-    // Older files name the reference point front/center/end, newer ones top/middle/bottom.
-    const rel = f?.attrs.relativeto ?? "front";
-    const start =
-      rel === "center" || rel === "middle"
-        ? offset + (rootChord - tabLength) / 2
-        : rel === "end" || rel === "bottom"
-          ? offset + rootChord - tabLength
-          : offset;
-    tab = { start, length: tabLength, height: tabHeight };
-  }
+  const { tab, tabMoved } = finTab(node, outline.shape, rootChord);
   const radiusMethod = node.fields.get("radiusoffset")?.attrs.method ?? "surface";
   if (radiusMethod !== "surface") {
     throw new UnsupportedError(`"${name}" uses a "${radiusMethod}" radius offset; only "surface" is supported so far.`);
@@ -581,6 +568,7 @@ function finSet(node: OrkNode, parent: Part): FinSetPart {
     cant: (optNumber(node, "cant") ?? 0) * DEG,
     outline,
     tab,
+    tabMoved,
     filletRadius: optLength(node, "filletradius") ?? 0,
     bodyRadius,
   };
@@ -762,6 +750,91 @@ function field(node: OrkNode, name: string): OrkField | undefined {
 
 function text(node: OrkNode, name: string): string {
   return field(node, name)?.text ?? "";
+}
+
+type TabMethod = "absolute" | "after" | "top" | "middle" | "bottom";
+
+/** AxialMethod.getAsPosition: where a tab `inner` long starts on a fin `outer` long. */
+function tabStart(method: TabMethod, offset: number, inner: number, outer: number): number {
+  switch (method) {
+    case "absolute":
+    case "top":
+      return offset;
+    case "after":
+      return outer + offset;
+    case "middle":
+      return offset + (outer - inner) / 2;
+    case "bottom":
+      return offset + (outer - inner);
+  }
+}
+
+/**
+ * The fin tab as OpenRocket has it after opening the file, by replaying how it reads one (FinSet,
+ * FinTabPositionSetter, FinSetPointHandler). It works out where the tab starts from the fin's
+ * length at the moment it reads <tablength> and each <tabposition>, and files have those before the
+ * root chord or fin points, so at that moment the fin still has its default 50 mm length. Trapezoidal
+ * and freeform fin sets place the tab again once their size is read; elliptical ones don't
+ * (OpenRocket 24.12), so their tab stays where it would be on a 50 mm fin, only shortened if it then
+ * runs past the root's end. tabMoved is how far that puts an elliptical fin's tab from where its
+ * saved position says.
+ */
+function finTab(node: OrkNode, shape: FinOutline["shape"], finLength: number): { tab: FinSetPart["tab"]; tabMoved: number } {
+  const SAME = 1e-8 * M; // OpenRocket's MathUtil.EPSILON
+  let method: TabMethod = "middle";
+  let offset = 0;
+  let tabLength = 0.05 * M;
+  let savedLength = tabLength;
+  let start = 0;
+  let length = 0.05 * M;
+  const place = () => (start = tabStart(method, offset, tabLength, length));
+  // FinSet.validateFinTabLength
+  const shorten = () => {
+    if (length < start + tabLength) tabLength -= start + tabLength - length;
+    tabLength = Math.max(0, tabLength);
+  };
+  for (const el of childElements(node.element)) {
+    if (el.tagName === "finpoints") {
+      // FreeformFinSet.setPoints makes the fin's length the last point's x and shortens the tab if
+      // needed; then the loader places the tab again.
+      if (shape === "freeform") {
+        if (finLength !== length) {
+          length = finLength;
+          shorten();
+        }
+        place();
+      }
+      continue;
+    }
+    const v = Number((el.textContent ?? "").trim()) * M;
+    if (!Number.isFinite(v)) continue;
+    if (el.tagName === "tablength" && Math.abs(tabLength - Math.max(v, 0)) >= SAME) {
+      tabLength = savedLength = v;
+      place();
+    } else if (el.tagName === "tabposition") {
+      // Older files name the reference point front/center/end.
+      const rel = (attributesOf(el).relativeto ?? "").trim();
+      const m = rel.includes("front") ? "top" : rel.includes("center") ? "middle" : rel.includes("end") ? "bottom" : rel;
+      if (!["absolute", "after", "top", "middle", "bottom"].includes(m)) continue;
+      method = m as TabMethod;
+      offset = v;
+      place();
+    } else if (el.tagName === "rootchord" && shape === "trapezoid") {
+      if (length !== Math.max(v, 0)) {
+        length = Math.max(v, 0);
+        place();
+      }
+    } else if (el.tagName === "rootchord" && shape === "elliptical") {
+      if (Math.abs(length - v) >= SAME) {
+        length = v;
+        shorten();
+      }
+    }
+  }
+  const height = optLength(node, "tabheight") ?? 0;
+  if (!(height > 0 && tabLength > 0)) return { tab: null, tabMoved: 0 };
+  const tabMoved = shape === "elliptical" ? start - tabStart(method, offset, savedLength, finLength) : 0;
+  return { tab: { start, length: tabLength, height }, tabMoved };
 }
 
 function bool(node: OrkNode, name: string): boolean {

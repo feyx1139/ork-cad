@@ -11,6 +11,8 @@
   --warn-bg: #fff4dd;
   --error: #b42318;
   --error-bg: #fde7e5;
+  --ok: #1d6b38;
+  --ok-bg: #e3f5e8;
   --stage: #e9ecf1;
   font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -27,6 +29,8 @@
     --warn-bg: #3a2c12;
     --error: #ff8a80;
     --error-bg: #3b1715;
+    --ok: #7fd49a;
+    --ok-bg: #143021;
     --stage: #0e1116;
   }
 }
@@ -223,8 +227,31 @@ li.warn {
   padding: 6px 8px;
   border-radius: 6px;
 }
-p.note {
+p.note,
+li.note {
   color: var(--muted);
+}
+p.ok {
+  color: var(--ok);
+  background: var(--ok-bg);
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.match h4 {
+  margin: 12px 0 4px;
+  font-size: 13px;
+}
+.match ul:not(.messages) {
+  margin: 0;
+  padding-left: 18px;
+}
+.match pre {
+  overflow-x: auto;
+  padding: 8px;
+  margin: 0;
+  background: var(--bg);
+  border-radius: 6px;
+  font-size: 12px;
 }
 li.error {
   color: var(--error);

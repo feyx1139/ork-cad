@@ -1,13 +1,15 @@
 // Messages between the page (main.ts) and the CAD worker (worker.ts).
 
-import type { PartView, RocketView, SpacesView } from "./session.ts";
+import type { MatchView, PartView, RocketView, SpacesView } from "./session.ts";
 
 export type Request =
   | { id: number; type: "open"; bytes: ArrayBuffer; fileName: string }
   | { id: number; type: "setDetails"; key: string; details: string }
-  | { id: number; type: "file"; key: string; format: "step" | "stl" }
+  | { id: number; type: "file"; key: string; format: "stl" | "step" }
   | { id: number; type: "zip" }
-  | { id: number; type: "save" };
+  | { id: number; type: "save" }
+  | { id: number; type: "compare"; key: string; bytes: ArrayBuffer; fileName: string; flip?: boolean }
+  | { id: number; type: "applyMatch"; key: string };
 
 /** Requests without the id, which the page adds. */
 export type RequestBody = Request extends infer R ? (R extends Request ? Omit<R, "id"> : never) : never;
@@ -19,4 +21,5 @@ export type Message =
   | { type: "spaces"; spaces: SpacesView }
   | { id: number; type: "done" }
   | { id: number; type: "file"; name: string; bytes: ArrayBuffer }
+  | { id: number; type: "match"; match: MatchView }
   | { id: number; type: "error"; message: string };

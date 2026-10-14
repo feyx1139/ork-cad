@@ -71,6 +71,20 @@ test("a lead-in chamfer blended by a round", () => {
   close(removed(["@chamfer end=aft length=6 angle=30 round=3"]), expected, 1e-5);
 });
 
+test("a chamfer given by its inset leaves an end face that much smaller", () => {
+  // A 5 mm round tangent to the side, then a straight 45 degree line down to the end face at
+  // R - 4, turned around the axis: what's removed is the cylinder they cut into minus the solid
+  // under the round (worked out exactly) and under the line (a cone frustum).
+  const [rho, th, inset] = [5, Math.PI / 4, 4];
+  const c = R - rho;
+  const a = rho * Math.sin(th); // the round's length along the axis
+  const underRound = Math.PI * ((c ** 2 + rho ** 2) * a - a ** 3 / 3 + c * (a * Math.sqrt(rho ** 2 - a ** 2) + rho ** 2 * Math.asin(a / rho)));
+  const [r1, r2] = [R - rho * (1 - Math.cos(th)), R - inset];
+  const h = (r1 - r2) / Math.tan(th); // the straight part's length along the axis
+  const underLine = (Math.PI * h * (r1 ** 2 + r1 * r2 + r2 ** 2)) / 3;
+  close(removed(["@chamfer end=aft inset=4 angle=45 round=5"]), Math.PI * R ** 2 * (a + h) - underRound - underLine);
+});
+
 test("a captive M4 nut, the slot it slides in through, and the screw hole", () => {
   const flats = 7.0 + 0.6;
   const t = 3.2 + 0.8;
