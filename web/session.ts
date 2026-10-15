@@ -18,6 +18,8 @@ import { reportText } from "../src/export/report.ts";
 import { readCad } from "../src/match/cad.ts";
 import { applyMatch, matchPart, matchText, type MatchResult } from "../src/match/compare.ts";
 import { EGG_RADIUS, revsPerSecond, spinLoad, steadyRoll } from "../src/aero/roll.ts";
+import { describeFeature } from "../src/features/describe.ts";
+import { aboutPart, type PartAbout } from "../src/ork/about.ts";
 
 /** A comparison of a part with a CAD file, for the page. */
 export interface MatchView extends MatchResult {
@@ -40,6 +42,26 @@ export interface AutoDetail {
   /** Which "@auto" setting turns it off. */
   kind: AutoKind;
   why: string;
+  /** In plain words (src/features/describe.ts). */
+  title: string;
+  text: string;
+  /** Its place among the part's details, to show it in 3D (detailShape). */
+  index: number;
+}
+
+/** A detail line written in the part's comment, in plain words when it could be read. */
+export interface WrittenDetail {
+  line: string;
+  title?: string;
+  text?: string;
+  /** Its place among the part's details, to show it in 3D; undefined if it isn't a detail that builds. */
+  index?: number;
+}
+
+/** What a detail does to its part, to show in 3D: the plastic it takes away and the plastic it adds. */
+export interface DetailShape {
+  removed?: PartMesh;
+  added?: PartMesh;
 }
 
 /** How fast canted fins spin the rocket (src/aero/roll.ts), at the top speed of a saved simulation. */
@@ -62,6 +84,10 @@ export interface PartView {
   type: string;
   /** The detail lines (@...) of its comment. The rest of the comment is kept as it is. */
   details: string;
+  /** The same lines, each in plain words. */
+  written: WrittenDetail[];
+  /** What the part is and where, in plain words. */
+  about: PartAbout;
   /** Details ork-cad adds by itself, which a line of the same kind in `details` replaces. */
   auto: AutoDetail[];
   /** Why an automatic detail isn't there, e.g. the part would have to be solid. */
@@ -223,7 +249,11 @@ export class Session {
       name: part.name,
       type: part.type,
       details: detailLines(part.comment).join("\n"),
-      auto: part.features.filter((f) => f.auto).map((f) => ({ line: f.source, kind: autoKind(f.kind), why: f.auto! })),
+      written: detailLines(part.comment).map((line) => writtenDetail(part, line)),
+      about: aboutPart(part),
+      auto: part.features.flatMap((f, index) =>
+        f.auto ? [{ line: f.source, kind: autoKind(f.kind), why: f.auto, index, ...describeFeature(f, part) }] : [],
+      ),
       autoNotes: part.autoNotes ?? [],
       autoOff: AUTO_KINDS.filter((k) => part.autoSettings?.[k] === false),
       material: material?.text ?? "",
@@ -292,6 +322,32 @@ export class Session {
     addAutoDetails(this.model);
     const changed = this.parts.filter((p) => p !== part && this.builtWith.get(this.keyOf(p)) !== signature(p));
     return [part, ...changed].map((p) => this.build(p));
+  }
+
+  /**
+   * What one of a part's details does, to show in 3D: the part built with it and without it, and
+   * the difference both ways (holes and pockets take plastic away; a screw joint's collar and plug,
+   * or printing solid, add it). Fins printed with their tube are shown as the fins themselves.
+   */
+  detailShape(key: string, index: number): DetailShape {
+    const part = this.part(key);
+    const f = part.features[index];
+    if (!f) throw new Error(`${part.name} has no detail ${index + 1}; it may have changed.`);
+    const without = { ...part, features: part.features.filter((g) => g !== f) } as Part;
+    const plain = buildPart(without, this.model)?.solids ?? [];
+    if (f.kind === "one-piece") return { added: plain.length ? meshOf(plain) : undefined };
+    const built = this.solids.get(this.keyOf(part)) ?? [];
+    const removed: Shape3D[] = [];
+    const added: Shape3D[] = [];
+    plain.forEach((p, i) => {
+      const w = built[i];
+      if (!w) return;
+      const gone = p.cut(w);
+      const extra = w.cut(p);
+      if (solidVolume(gone) > 1e-6) removed.push(gone);
+      if (solidVolume(extra) > 1e-6) added.push(extra);
+    });
+    return { removed: removed.length ? meshOf(removed) : undefined, added: added.length ? meshOf(added) : undefined };
   }
 
   spaces(): SpacesView {
@@ -434,6 +490,29 @@ function signature(part: Part): string {
   const fins = part.children.filter((c) => c.kind === "finset" && c.features.some((f) => f.kind === "one-piece")).map((c) => c.id);
   return JSON.stringify([part.features.map((f) => [f.source, f.auto ?? ""]), part.autoNotes ?? [], part.detailErrors, fins]);
 }
+
+function writtenDetail(part: Part, line: string): WrittenDetail {
+  if (/^@auto\b/i.test(line)) {
+    const off = AUTO_KINDS.filter((k) => part.autoSettings?.[k] === false);
+    return {
+      line,
+      title: "Automatic details turned off",
+      text: off.length ? `ork-cad doesn't add these by itself on this part: ${off.map((k) => AUTO_WORDS[k]).join(", ")}.` : "Nothing is turned off.",
+    };
+  }
+  const index = part.features.findIndex((f) => !f.auto && f.source === line);
+  return index < 0 ? { line } : { line, index, ...describeFeature(part.features[index], part) };
+}
+
+/** The kinds of automatic detail, in words. */
+const AUTO_WORDS: Record<AutoKind, string> = {
+  solid: "printing solid",
+  pocket: "the altimeter pocket",
+  vents: "altimeter vents",
+  "nut-trap": "the eyebolt nut",
+  edges: "lead-ins on the shoulders",
+  "one-piece": "printing the fins with their tube",
+};
 
 function autoKind(kind: string): AutoKind {
   return kind === "side-holes" ? "vents" : kind === "chamfer" || kind === "round" ? "edges" : (kind as AutoKind);

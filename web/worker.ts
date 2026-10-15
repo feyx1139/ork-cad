@@ -78,6 +78,13 @@ async function handle(req: Request): Promise<void> {
         post({ id: req.id, type: "match", match });
         return;
       }
+      case "detailShape": {
+        post({ type: "progress", text: "Working out what the detail does…" });
+        const shape = need(session).detailShape(req.key, req.index);
+        const buffers = [shape.removed, shape.added].flatMap((m) => (m ? [m.vertices.buffer, m.normals.buffer, m.triangles.buffer, m.edges.buffer] : []));
+        post({ id: req.id, type: "detailShape", shape }, buffers);
+        return;
+      }
       case "applyMatch": {
         const s = need(session);
         s.applyMatch(req.key);

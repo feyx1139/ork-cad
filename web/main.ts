@@ -3,6 +3,7 @@
 // All the CAD work happens in worker.ts.
 
 import { Viewer } from "./viewer.ts";
+import { kindsFor, showForm } from "./detail-form.ts";
 import { partColor } from "../src/export/colors.ts";
 import type { Message, RequestBody } from "./protocol.ts";
 import type { MatchView, PartView, SpacesView, SpinView } from "./session.ts";
@@ -170,6 +171,7 @@ function showPart(p: PartView): void {
   const meta = document.createElement("span");
   meta.className = "meta";
   meta.textContent = [
+    p.about.label.split(":")[0],
     p.copies > 1 ? `${p.copies} copies` : "",
     p.printedWith ? `in ${p.printedWith}` : `${(p.volume / 1000).toFixed(1)} cm³`,
     p.printedWith ? "" : massText(p),
@@ -205,7 +207,8 @@ $<HTMLInputElement>("cut").addEventListener("change", (e) => viewer.setCut((e.ta
 $<HTMLInputElement>("only").addEventListener("change", (e) => viewer.setOnlySelected((e.target as HTMLInputElement).checked));
 
 // ---------------------------------------------------------------------------------------------
-// The selected part: facts, details editor, downloads
+// The selected part: what it is, its details in words (shown in 3D, changed with a form or as
+// text), and downloads
 
 const HELP = `@side-holes count=4 diameter=2 at=10
 @end-holes count=4 diameter=3 radius=12 end=fore
@@ -228,8 +231,17 @@ const AUTO_NAMES: Record<string, string> = {
   "one-piece": "printing the fins as part of their tube (they get their own STL)",
 };
 
+/** The detail shown in 3D: its part and place among the part's details. */
+let shownDetail: { key: string; index: number } | null = null;
+
+function hideDetail(): void {
+  shownDetail = null;
+  viewer.showDetail(null);
+}
+
 function showSelected(): void {
   const p = selected ? parts.get(selected) : undefined;
+  if (shownDetail && shownDetail.key !== selected) hideDetail();
   if (!p) {
     selectedEl.className = "muted";
     selectedEl.textContent = parts.size ? "Click a part (in the list or the 3D view) to see it here." : "";
@@ -238,8 +250,10 @@ function showSelected(): void {
   selectedEl.className = "";
   selectedEl.innerHTML = `
     <h2></h2>
+    <p class="part-label"></p>
+    <p class="muted part-about"></p>
     <dl>
-      <dt>Type</dt><dd data-f="type"></dd>
+      <dt>Where</dt><dd data-f="where"></dd>
       <dt>Material</dt><dd data-f="material"></dd>
       <dt>Plastic</dt><dd data-f="volume"></dd>
     </dl>
@@ -248,36 +262,31 @@ function showSelected(): void {
       <h3>Spin from fin cant</h3>
       <p></p>
     </section>
-    <label for="details"><strong>Details</strong> <span class="muted">— holes, pockets, nut traps…</span></label>
-    <textarea id="details" rows="6" spellcheck="false" placeholder="@side-holes count=4 diameter=2 at=10"></textarea>
-    <div class="row">
-      <button id="apply" class="primary">Apply</button>
-      <span class="muted">Ctrl+Enter</span>
-    </div>
-    <section class="auto" hidden>
-      <h3>Automatic details</h3>
-      <p class="muted">ork-cad adds these by itself, from what's in the design. <em>Edit</em> copies one into the details
-      above, where your line takes its place; <em>Turn off</em> adds an <code>@auto</code> line.</p>
-      <ul class="auto-list"></ul>
+    <section class="details-section">
+      <h3>Details</h3>
+      <p class="muted small">Holes, pockets, nuts and other things OpenRocket can't draw. <em>Show in 3D</em> marks what
+      a detail cuts away in red, and what it adds in green.</p>
+      <ul class="detail-list"></ul>
+      <div class="row add-row"><button id="add-detail">+ Add a detail</button></div>
+      <div class="detail-form" hidden></div>
+      <details class="as-text">
+        <summary>Edit the details as text</summary>
+        <textarea id="details" rows="6" spellcheck="false" placeholder="@side-holes count=4 diameter=2 at=10"></textarea>
+        <div class="row">
+          <button id="apply" class="primary">Apply</button>
+          <span class="muted">Ctrl+Enter</span>
+        </div>
+        <div class="help">
+          <pre></pre>
+          <p>Lengths are mm unless you write <code>in</code> or <code>cm</code> (e.g. <code>1/8in</code>). Angles are degrees, and
+          <code>angle=0</code> lines up with the first fin. <code>at</code> is measured from the fore (top) end of the part's body;
+          a negative <code>at</code> goes into its fore shoulder. A line here replaces the automatic detail of the same kind;
+          <code>@auto off</code> turns them all off for this part, or one kind at a time: <code>@auto vents=off</code>,
+          <code>solid=off</code>, <code>pocket=off</code>, <code>nut-trap=off</code>, <code>edges=off</code>,
+          <code>one-piece=off</code>. The details are saved into the part's comment when you save the .ork.</p>
+        </div>
+      </details>
     </section>
-    <details class="help">
-      <summary>What can I write here?</summary>
-      <pre></pre>
-      <p>Lengths are mm unless you write <code>in</code> or <code>cm</code> (e.g. <code>1/8in</code>). Angles are degrees, and
-      <code>angle=0</code> lines up with the first fin. <code>at</code> is measured from the fore end of the part's body;
-      a negative <code>at</code> goes into its fore shoulder. A chamfer can be given by its <code>inset</code> (how far in
-      it cuts at the end face) instead of its <code>length</code>, and a pocket's <code>round</code> rounds the edge of its
-      mouth. Pockets and nut traps need the part to be solid: tick <em>Filled</em> for it in OpenRocket, or write
-      <code>@solid</code> (ork-cad adds it by itself to a part whose material has an infill's density). A line here
-      replaces the automatic detail of the same kind; <code>@auto off</code> turns them all off for this part, or one kind
-      at a time: <code>@auto vents=off</code>, <code>solid=off</code>, <code>pocket=off</code>, <code>nut-trap=off</code>,
-      <code>edges=off</code>.
-      <code>@screw-joint</code> on a body tube prints it in two pieces that screw together where <code>at</code> says
-      (e.g. a fin section that unscrews), each in its own STL file.
-      <code>@one-piece</code> on a fin set prints the fins as part of their body tube, in its STL file (added by itself
-      for printed fins on a printed tube without tabs; <code>@auto one-piece=off</code> prints them on their own).
-      The details are saved into the part's comment when you save the .ork.</p>
-    </details>
     <h3>Download this part</h3>
     <div class="row">
       <button data-format="stl" class="primary">STL (for printing)</button>
@@ -295,8 +304,10 @@ function showSelected(): void {
       <div class="match"></div>
     </section>`;
   selectedEl.querySelector("h2")!.textContent = p.name;
+  selectedEl.querySelector(".part-label")!.textContent = p.about.label + (p.copies > 1 && p.type !== "railbutton" && !p.type.endsWith("finset") ? ` (${p.copies} of them)` : "");
+  selectedEl.querySelector(".part-about")!.textContent = p.about.about;
   const field = (f: string) => selectedEl.querySelector<HTMLElement>(`[data-f="${f}"]`)!;
-  field("type").textContent = `${p.type}${p.copies > 1 ? `, ${p.copies} copies` : ""}`;
+  field("where").textContent = `${p.about.from.toFixed(0)} to ${p.about.to.toFixed(0)} mm from the nose tip`;
   field("material").textContent = p.material || "—";
   field("volume").textContent = p.printedWith
     ? `printed as part of ${p.printedWith}, so it's counted there`
@@ -312,11 +323,13 @@ function showSelected(): void {
   }
   if (p.spin) showSpin(p.spin);
   selectedEl.querySelector("pre")!.textContent = HELP;
+
   const box = selectedEl.querySelector<HTMLTextAreaElement>("#details")!;
   box.value = p.details;
   const apply = selectedEl.querySelector<HTMLButtonElement>("#apply")!;
   const run = async () => {
     apply.disabled = true;
+    hideDetail();
     setStatus(`Rebuilding ${p.name}…`);
     const reply = await request({ type: "setDetails", key: p.key, details: box.value });
     apply.disabled = false;
@@ -330,7 +343,22 @@ function showSelected(): void {
   box.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void run();
   });
-  showAuto(p, box, run);
+  /** The detail lines in the text box, changed and applied. */
+  const setLines = (change: (lines: string[]) => string[]) => {
+    box.value = change(box.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)).join("\n");
+    void run();
+  };
+  const form = selectedEl.querySelector<HTMLElement>(".detail-form")!;
+  const addButton = selectedEl.querySelector<HTMLButtonElement>("#add-detail")!;
+  const openForm = (line: string | undefined, done: (line: string) => void) => {
+    addButton.hidden = true;
+    showForm(form, p.type, line, done, () => (addButton.hidden = false));
+    form.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
+  addButton.hidden = kindsFor(p.type).length === 0;
+  addButton.addEventListener("click", () => openForm(undefined, (line) => setLines((lines) => [...lines, line])));
+  showDetails(p, openForm, setLines);
+
   for (const b of selectedEl.querySelectorAll<HTMLButtonElement>("button[data-format]")) {
     b.disabled = !p.mesh;
     b.addEventListener("click", () => void download({ type: "file", key: p.key, format: b.dataset.format as "stl" | "step" }, b));
@@ -361,42 +389,116 @@ function showSpin(s: SpinView): void {
     `almost straight on, so it adds next to no drag. To set the apogee, change the nose weight.`;
 }
 
-/** The selected part's automatic details: each with why it's there, to edit or turn off. */
-function showAuto(p: PartView, box: HTMLTextAreaElement, apply: () => Promise<void>): void {
-  const section = selectedEl.querySelector<HTMLElement>(".auto")!;
-  const list = section.querySelector("ul")!;
-  section.hidden = !p.auto.length && !p.autoNotes.length && !p.autoOff.length;
-  for (const a of p.auto) {
+/**
+ * The part's details, each in words: the ones written for it (to show in 3D, change with the form,
+ * or remove) and the automatic ones (to show, change, or turn off), with why each is there.
+ */
+function showDetails(
+  p: PartView,
+  openForm: (line: string | undefined, done: (line: string) => void) => void,
+  setLines: (change: (lines: string[]) => string[]) => void,
+): void {
+  const list = selectedEl.querySelector<HTMLUListElement>(".detail-list")!;
+  const button = (text: string, title: string, click: (b: HTMLButtonElement) => void) => {
+    const b = document.createElement("button");
+    b.textContent = text;
+    b.title = title;
+    b.addEventListener("click", () => click(b));
+    return b;
+  };
+  const item = (title: string, text: string, line: string, automatic: boolean) => {
     const li = document.createElement("li");
-    const line = document.createElement("code");
-    line.textContent = a.line;
-    const edit = document.createElement("button");
-    edit.textContent = "Edit";
-    edit.title = "Copy it into the details above to change it; your line takes its place";
-    edit.addEventListener("click", () => {
-      box.value = [box.value.trim(), a.line].filter(Boolean).join("\n");
-      box.focus();
-      setStatus("Change the line as you like, then Apply: it takes the place of the automatic one.");
+    li.className = automatic ? "detail auto" : "detail";
+    const head = document.createElement("div");
+    head.className = "detail-head";
+    const strong = document.createElement("strong");
+    strong.textContent = title;
+    head.append(strong);
+    if (automatic) {
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = "automatic";
+      tag.title = "ork-cad added this by itself, from what's in the design";
+      head.append(tag);
+    }
+    const words = document.createElement("p");
+    words.textContent = text;
+    const code = document.createElement("code");
+    code.className = "detail-line";
+    code.textContent = line;
+    const buttons = document.createElement("div");
+    buttons.className = "detail-buttons";
+    li.append(head, words, buttons, code);
+    list.append(li);
+    return { li, buttons };
+  };
+  const show3d = (index: number) =>
+    button("Show in 3D", "Mark what this detail cuts away (red) and adds (green) on the part", async (b) => {
+      if (shownDetail?.key === p.key && shownDetail.index === index) {
+        hideDetail();
+        b.textContent = "Show in 3D";
+        return;
+      }
+      for (const other of list.querySelectorAll<HTMLButtonElement>("button.showing")) {
+        other.classList.remove("showing");
+        other.textContent = "Show in 3D";
+      }
+      b.disabled = true;
+      const reply = await request({ type: "detailShape", key: p.key, index });
+      b.disabled = false;
+      if (reply.type === "error") return setStatus(reply.message, true);
+      if (reply.type !== "detailShape") return;
+      if (!reply.shape.removed && !reply.shape.added) return setStatus("This detail doesn't change the part's shape.");
+      shownDetail = { key: p.key, index };
+      viewer.showDetail(reply.shape);
+      b.classList.add("showing");
+      b.textContent = "Hide";
+      setStatus(
+        reply.shape.removed && reply.shape.added
+          ? "Red: plastic this detail cuts away. Green: plastic it adds."
+          : reply.shape.removed
+            ? "Red: the plastic this detail cuts away."
+            : "Green: the plastic this detail adds.",
+      );
     });
-    const off = document.createElement("button");
-    off.textContent = "Turn off";
-    off.title = `Adds "@auto ${a.kind}=off": no automatic ${AUTO_NAMES[a.kind]} on this part`;
-    off.addEventListener("click", () => {
-      const lines = box.value.split(/\r?\n/).filter((l) => l.trim());
-      const i = lines.findIndex((l) => /^\s*@auto\b/i.test(l));
-      if (i >= 0) lines[i] = `${lines[i].trimEnd()} ${a.kind}=off`;
-      else lines.push(`@auto ${a.kind}=off`);
-      box.value = lines.join("\n");
-      void apply();
-    });
-    const buttons = document.createElement("span");
-    buttons.className = "auto-buttons";
-    buttons.append(edit, off);
+
+  p.written.forEach((d, i) => {
+    if (d.title === undefined) {
+      const { buttons } = item("Can't be read", "This line has a problem (see above); fix it with Edit, or remove it.", d.line, false);
+      buttons.append(
+        button("Edit", "Change it as text", () => {
+          const text = selectedEl.querySelector<HTMLDetailsElement>(".as-text")!;
+          text.open = true;
+          selectedEl.querySelector<HTMLTextAreaElement>("#details")!.focus();
+        }),
+        button("Remove", "Take this line out", () => setLines((lines) => lines.filter((_, k) => k !== i))),
+      );
+      return;
+    }
+    const { buttons } = item(d.title, d.text ?? "", d.line, false);
+    if (d.index !== undefined) buttons.append(show3d(d.index));
+    if (!/^@auto\b/i.test(d.line)) {
+      buttons.append(button("Change", "Change it with the form", () => openForm(d.line, (line) => setLines((lines) => lines.map((l, k) => (k === i ? line : l))))));
+    }
+    buttons.append(button("Remove", "Take this detail out", () => setLines((lines) => lines.filter((_, k) => k !== i))));
+  });
+  for (const a of p.auto) {
+    const { li, buttons } = item(a.title, a.text, a.line, true);
+    buttons.append(
+      show3d(a.index),
+      button("Change", "Your own line takes the place of the automatic one", () => openForm(a.line, (line) => setLines((lines) => [...lines, line]))),
+      button("Turn off", `Adds "@auto ${a.kind}=off": no automatic ${AUTO_NAMES[a.kind]} on this part`, () =>
+        setLines((lines) => {
+          const i = lines.findIndex((l) => /^@auto\b/i.test(l));
+          if (i >= 0) return lines.map((l, k) => (k === i ? `${l} ${a.kind}=off` : l));
+          return [...lines, `@auto ${a.kind}=off`];
+        }),
+      ),
+    );
     const why = document.createElement("details");
     why.innerHTML = "<summary>Why</summary><p></p>";
     why.querySelector("p")!.textContent = a.why;
-    li.append(line, buttons, why);
-    list.append(li);
+    li.insertBefore(why, li.querySelector(".detail-line"));
   }
   for (const text of p.autoNotes) {
     const li = document.createElement("li");
@@ -404,10 +506,10 @@ function showAuto(p: PartView, box: HTMLTextAreaElement, apply: () => Promise<vo
     li.textContent = text;
     list.append(li);
   }
-  if (p.autoOff.length) {
+  if (!list.children.length) {
     const li = document.createElement("li");
-    li.className = "note";
-    li.textContent = `Turned off for this part by the @auto line in its details: ${p.autoOff.map((k) => AUTO_NAMES[k]).join(", ")}.`;
+    li.className = "muted";
+    li.textContent = "None yet.";
     list.append(li);
   }
 }

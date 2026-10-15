@@ -28,11 +28,18 @@ npm run dev
 Then open http://localhost:5173. Open or drop an `.ork`, and the parts appear in 3D.
 - **Parts list:** shows each part's plastic volume and mass.
 - **Sealed spaces:** show what's inside each space and which holes vent it.
-- **Clicking a part:** shows its details editor. Type detail lines (see below), press **Apply**, and
-  the part rebuilds.
-- **Automatic details:** listed under a part's details, each with why it's there. **Edit** copies one
-  into the details to change it; **Turn off** turns that kind off for the part (see
-  [Automatic details](#automatic-details)).
+- **Clicking a part:** says what it is in plain words ("Body tube: 66 mm across (64 inside), 305 mm
+  long"), what it's for, and where it is (mm from the nose tip), and lists its details, each in
+  words ("4 holes, 2 mm across, straight through the wall 60 mm from the top end…").
+  - **Show in 3D** marks what a detail does on the part: the plastic it cuts away in red, the
+    plastic it adds in green (worked out exactly, by building the part with and without it).
+  - **+ Add a detail** opens a form: pick the kind (holes, pocket, captive nut, bevelled edge…),
+    fill in labelled boxes, each explained, with a diagram of what the sizes mean. The form writes
+    the detail line, and **Change** opens a detail in the same form.
+  - **Edit the details as text** shows the lines themselves (see below), to type or paste.
+- **Automatic details:** listed with the part's details, marked "automatic", each with why it's
+  there. **Change** puts a line of your own in its place; **Turn off** turns that kind off for the
+  part (see [Automatic details](#automatic-details)).
 - **Canted fins:** a canted fin set shows how fast it spins the rocket and how hard that pushes on
   the eggs (see [Fin cant, spin and apogee](#fin-cant-spin-and-apogee)).
 - **Cut in half:** shows walls, pockets and vents from the inside.
@@ -386,6 +393,9 @@ designs of your own in `test/private/fixtures/`, a folder git ignores.
   canted, exactly the tube and the canted fins; with a screw joint, they go on the right piece.
 - **Spin:** the spin worked out for canted fins agrees with OpenRocket's own simulations of two of
   its examples to within 2%, and goes with the speed and the cant as it should.
+- **Plain words:** every kind of detail and part is described; a detail shown in 3D is exactly the
+  plastic it changes (three holes through the nose cone: their volume to within the mesh); the form
+  writes lines that read back without errors for every kind, keeping settings it has no box for.
 - **Tuning:** the search for a target apogee (`src/flight/solve.ts`) finds it in a few flights,
   stays in range, and says when it can't be reached.
 - **Every shape type:** all six nose/transition shapes, as nose cones and as growing, shrinking and

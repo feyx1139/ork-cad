@@ -1,5 +1,6 @@
 // The 3D view: one mesh (plus its CAD edges) per part, orbit controls, picking parts with a click,
-// a "cut in half" section view, and showing only the selected part. The rocket's axis is Z.
+// a "cut in half" section view, showing only the selected part, and showing what one detail does
+// (plastic it takes away in red, plastic it adds in green). The rocket's axis is Z.
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -15,6 +16,8 @@ interface Shown {
 }
 
 const SELECTED = new THREE.Color("#2f6fde");
+const REMOVED = new THREE.Color("#e5484d");
+const ADDED = new THREE.Color("#2fa36b");
 const EDGE = new THREE.Color("#1d2330");
 
 export class Viewer {
@@ -29,6 +32,8 @@ export class Viewer {
   private cutPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private cut = false;
   private container: HTMLElement;
+  /** What a detail does, drawn over the parts (see showDetail). */
+  private highlight = new THREE.Group();
   onPick: (key: string | null) => void = () => {};
 
   constructor(container: HTMLElement) {
@@ -47,6 +52,7 @@ export class Viewer {
     sun.position.set(-400, -900, 1200);
     this.camera.add(sun); // light follows the camera so every side is readable
     this.scene.add(this.camera);
+    this.scene.add(this.highlight);
 
     new ResizeObserver(() => this.resize()).observe(container);
     this.resize();
@@ -99,7 +105,37 @@ export class Viewer {
   clear(): void {
     for (const key of [...this.parts.keys()]) this.remove(key);
     this.selected = null;
-    this.render();
+    this.showDetail(null);
+  }
+
+  /**
+   * Shows what one detail does: the plastic it takes away (red) and adds (green), drawn through
+   * the part so a pocket inside it shows too, while the rest of the part fades. null clears it.
+   */
+  showDetail(shape: { removed?: PartMesh; added?: PartMesh } | null): void {
+    for (const child of [...this.highlight.children]) {
+      this.highlight.remove(child);
+      const m = child as THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
+      m.geometry.dispose();
+      m.material.dispose();
+    }
+    for (const [mesh, color] of [
+      [shape?.removed, REMOVED],
+      [shape?.added, ADDED],
+    ] as const) {
+      if (!mesh) continue;
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(mesh.vertices, 3));
+      geometry.setAttribute("normal", new THREE.BufferAttribute(mesh.normals, 3));
+      geometry.setIndex(new THREE.BufferAttribute(mesh.triangles, 1));
+      const solid = new THREE.Mesh(
+        geometry,
+        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35, depthTest: false, transparent: true, opacity: 0.9 }),
+      );
+      solid.renderOrder = 10;
+      this.highlight.add(solid);
+    }
+    this.refresh();
   }
 
   setVisible(key: string, visible: boolean): void {
@@ -146,14 +182,22 @@ export class Viewer {
       p.group.visible = p.visible && (!this.onlySelected || this.selected === null || key === this.selected);
       const planes = this.cut ? [this.cutPlane] : [];
       const chosen = key === this.selected;
+      // Showing a detail: the parts fade so it stands out.
+      const faded = this.highlight.children.length > 0;
       for (const m of [p.surface.material, p.inside.material]) {
         m.clippingPlanes = planes;
+        m.transparent = faded;
+        m.opacity = faded ? 0.35 : 1;
+        m.depthWrite = !faded;
         m.emissive.copy(chosen ? SELECTED : new THREE.Color(0));
         m.emissiveIntensity = chosen ? 0.35 : 0;
       }
       p.edges.material.clippingPlanes = planes;
       p.edges.material.color.copy(chosen ? SELECTED : EDGE);
       p.edges.material.opacity = chosen ? 1 : 0.55;
+    }
+    for (const child of this.highlight.children) {
+      ((child as THREE.Mesh).material as THREE.Material).clippingPlanes = this.cut ? [this.cutPlane] : [];
     }
     this.render();
   }
