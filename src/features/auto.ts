@@ -1,8 +1,8 @@
 // Details ork-cad adds by itself, worked out from the design, so printed parts come out ready to
 // fly without typing them in. Each is an ordinary detail line with the reason it was added; a line
 // of the same kind written in the comment replaces it, and "@auto off" (or "@auto vents=off",
-// "@auto solid=off", "@auto pocket=off", "@auto nut-trap=off", "@auto edges=off") in a part's
-// comment turns them off.
+// "@auto solid=off", "@auto pocket=off", "@auto nut-trap=off", "@auto edges=off",
+// "@auto one-piece=off") in a part's comment turns them off.
 //
 //  - vents: holes into the altimeter's sealed space, so it senses the outside air pressure. Four
 //    in a ring, 90 degrees apart (the American Rocketry Challenge handbook: four is best, never
@@ -19,8 +19,10 @@
 //    transition, a captive nut there for an M4 eyebolt, so the eyebolt can't work loose.
 //  - edges: the free end of each shoulder of a printed nose cone or transition gets a lead-in, so
 //    it slides into its tube: a chamfer on the end it's printed standing on, a round on the other.
+//  - one-piece: printed fins on a printed body tube are printed as part of it, their roots joined
+//    into its wall, unless they have tabs (which are for gluing into slots).
 
-import { allParts, isFilled, type Part, type RocketModel, type TransitionPart } from "../ork/model.ts";
+import { allParts, isFilled, type FinSetPart, type Part, type RocketModel, type TransitionPart } from "../ork/model.ts";
 import { PRINTED } from "../export/colors.ts";
 import { findCompartments, isAltimeter, type Compartment } from "../checks/compartments.ts";
 import { hasShoulder, outerRadiusAt, partSpan } from "./part-shape.ts";
@@ -57,6 +59,7 @@ export function addAutoDetails(model: RocketModel): void {
     p.features = p.features.filter((f) => !f.auto);
     p.autoNotes = [];
   }
+  for (const p of parts) if (p.kind === "finset") onePiece(model, p);
   const transitions = parts.filter((p): p is TransitionPart => p.kind === "transition");
   const wantSolid = new Map<TransitionPart, string[]>();
   solid(model, transitions);
@@ -74,6 +77,37 @@ export function addAutoDetails(model: RocketModel): void {
     );
   }
   vents(model, spaces);
+}
+
+// ---------------------------------------------------------------------------------------------
+// One piece
+
+/**
+ * Printed fins on a printed body tube are printed with it, as one piece: nothing to glue or line
+ * up, and a canted fin comes out at its angle. Not when the fins have tabs: those go through slots
+ * in the tube, to be glued in.
+ */
+function onePiece(model: RocketModel, p: FinSetPart): void {
+  if (!on(p, "one-piece") || p.features.some((f) => f.kind === "one-piece") || p.tab) return;
+  const tube = allParts(model).find((q) => q.children.includes(p));
+  if (!tube || tube.kind !== "cylinder" || tube.type !== "bodytube" || tube.innerRadius <= 0) return;
+  if (!printed(p) || !printed(tube)) return;
+  const density = (q: Part) => Number(q.node?.fields.get("material")?.attrs.density);
+  const mass =
+    density(p) !== density(tube)
+      ? ` The file's plastic is all counted at ${tube.name}'s material (${density(tube)} kg/m³) in the report; the fins' own (${density(p)} kg/m³) is what OpenRocket uses for them.`
+      : "";
+  add(
+    p,
+    "@one-piece",
+    `Printed as part of ${tube.name}, in its file: both are printed (${materialName(p)}, ${materialName(tube)}) and the fins have no tabs, ` +
+      `so they aren't meant to be glued into slots. Each fin's root reaches into the tube's wall and is joined to it${p.cant !== 0 ? ", at the fins' cant" : ""}. ` +
+      `Turn this off to print the fins on their own.${mass}`,
+  );
+}
+
+function materialName(p: Part): string {
+  return p.node?.fields.get("material")?.text ?? "no material";
 }
 
 // ---------------------------------------------------------------------------------------------

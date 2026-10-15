@@ -56,6 +56,13 @@ for (const rocket of ROCKETS) {
         continue;
       }
 
+      if (part.kind === "finset" && part.cant !== 0) {
+        // OpenRocket's mass model fills a canted fin's root down to the tube along the root's
+        // middle line only, in 2.5 mm steps, and not where the tab is; ours is the exact solid,
+        // whose root meets the tube all the way across. They agree to within 2% (a fin canted 10°).
+        assert.ok(Math.abs(ours / refVolume - 1) < 0.02, `${part.name}: ours ${ours}, OpenRocket ${refVolume}`);
+        continue;
+      }
       let predicted = ours; // what OpenRocket's mass model should say about our solid
       if (part.kind === "finset") predicted = openRocketFinVolume(part, model, ours);
       assert.ok(Math.abs(refVolume / predicted - 1) < 1e-7, `${part.name}: OpenRocket ${refVolume}, expected ${predicted}`);
@@ -74,12 +81,46 @@ for (const rocket of ROCKETS) {
       const indices = obj.groups.get(group);
       assert.ok(indices?.length, `${part.name}: no OBJ group ${group}`);
       const query = new DistanceQuery(makeCompound(built.solids.flatMap((s) => s.faces)));
-      const distance = (p: [number, number, number]) => {
+      const at = (p: [number, number, number]) => {
         const v = makeVertex(p);
         const d = query.distanceTo(v);
         v.delete();
         return d;
       };
+      // OpenCASCADE's distance can be wrong for a point exactly in line with an edge of a face it
+      // lies on (it gave 0.44 mm for a canted fin's tab corner, and 0 for the same point moved
+      // 0.0001 mm), so a point that seems off is measured again, nudged a little each way.
+      const NUDGE = 1e-4;
+      const distance = (p: [number, number, number]) => {
+        let d = at(p);
+        for (let k = 0; k < 6 && d > ON_SURFACE; k++) {
+          const q: [number, number, number] = [...p];
+          q[k % 3] += k < 3 ? NUDGE : -NUDGE;
+          d = Math.min(d, at(q) + NUDGE);
+        }
+        return d;
+      };
+
+      if (part.kind === "finset" && part.cant !== 0) {
+        // OpenRocket lowers only the middle line of a canted fin's root onto the tube, so the
+        // root's corners in its OBJ dip into the tube (ours follow the tube's surface, across the
+        // fin's thickness too). Everything outside the tube must lie on our fin; the root's
+        // corners must be within the dip, which is at most what our root reaches down.
+        let max = 0;
+        let rootMax = 0;
+        for (const i of indices) {
+          const p = obj.vertices[i];
+          const d = distance(p);
+          if (Math.hypot(p[0], p[1]) > part.bodyRadius + ON_SURFACE) max = Math.max(max, d);
+          else rootMax = Math.max(rootMax, d);
+        }
+        const side = (part.length / 2) * Math.abs(Math.sin(part.cant)) + part.thickness;
+        const dip = side >= part.bodyRadius ? part.bodyRadius : part.bodyRadius - Math.sqrt(part.bodyRadius ** 2 - side ** 2);
+        t.diagnostic(`${part.name}: max distance ${max.toExponential(2)} mm outside the tube; root corners up to ${rootMax.toFixed(3)} mm in`);
+        assert.ok(max < ON_SURFACE, `${part.name}: an OBJ vertex outside the tube is ${max} mm from our fin`);
+        assert.ok(rootMax < dip, `${part.name}: a root corner is ${rootMax} mm from our fin, more than ${dip}`);
+        continue;
+      }
 
       if (part.kind !== "transition") {
         let max = 0;

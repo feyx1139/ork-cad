@@ -17,7 +17,8 @@
     "export": "node scripts/export-parts.ts",
     "reference": "node scripts/make-reference.ts",
     "add-detail": "node scripts/add-detail.ts",
-    "match": "node scripts/match-cad.ts"
+    "match": "node scripts/match-cad.ts",
+    "flight": "node scripts/flight.ts"
   },
   "dependencies": {
     "@xmldom/xmldom": "0.9.12",

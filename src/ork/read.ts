@@ -46,6 +46,17 @@ export interface OrkFile {
   creator: string;
   /** The `<rocket>` component. */
   rocket: OrkNode;
+  simulations: OrkSimulation[];
+}
+
+/** A simulation saved in the file, with what OpenRocket worked out when it last ran it (SI units). */
+export interface OrkSimulation {
+  name: string;
+  /** "uptodate", "outdated", "notsimulated" (OpenRocket keeps the old numbers when outdated)... */
+  status: string;
+  maxAltitude?: number;
+  maxVelocity?: number;
+  maxMach?: number;
 }
 
 const ELEMENT_NODE = 1;
@@ -61,10 +72,29 @@ export function readOrk(bytes: Uint8Array, parseXml: XmlParser): OrkFile {
   if (!rocketEl) {
     throw new Error("The file has no <rocket> element.");
   }
+  const simulations: OrkSimulation[] = [];
+  for (const list of childElements(root).filter((el) => el.tagName === "simulations")) {
+    for (const sim of childElements(list).filter((el) => el.tagName === "simulation")) {
+      const name = childElements(sim).find((el) => el.tagName === "name")?.textContent?.trim() ?? "";
+      const data = childElements(sim).find((el) => el.tagName === "flightdata");
+      const value = (key: string) => {
+        const v = data ? Number(attributesOf(data)[key]) : NaN;
+        return Number.isFinite(v) ? v : undefined;
+      };
+      simulations.push({
+        name,
+        status: attributesOf(sim).status ?? "",
+        maxAltitude: value("maxaltitude"),
+        maxVelocity: value("maxvelocity"),
+        maxMach: value("maxmach"),
+      });
+    }
+  }
   return {
     formatVersion: attrs.version ?? "",
     creator: attrs.creator ?? "",
     rocket: readNode(rocketEl),
+    simulations,
   };
 }
 

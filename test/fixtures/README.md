@@ -14,6 +14,8 @@ software under the GNU GPL v3 (https://openrocket.info).
 `fin-tabs.ork` was written for these tests: a body tube with eight fin sets, one for each way
 OpenRocket places a fin tab when it opens a file (trapezoidal, elliptical and freeform fins; tabs
 measured from the front, middle or bottom; fins shorter than OpenRocket's 50 mm default).
+`canted-fins.ork` is the same rocket with each fin set canted (5°, −3°, 8°, 2°, −10°, 15°, 4° and
+−6°), for canted fins.
 
 Each `.openrocket.json` and `.openrocket.obj` next to them is what OpenRocket itself computes for
 that design (positions, lengths, volumes, masses) and its OBJ export, made with

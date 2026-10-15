@@ -5,7 +5,7 @@
 import { Viewer } from "./viewer.ts";
 import { partColor } from "../src/export/colors.ts";
 import type { Message, RequestBody } from "./protocol.ts";
-import type { MatchView, PartView, SpacesView } from "./session.ts";
+import type { MatchView, PartView, SpacesView, SpinView } from "./session.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const statusEl = $("status");
@@ -171,8 +171,8 @@ function showPart(p: PartView): void {
   meta.className = "meta";
   meta.textContent = [
     p.copies > 1 ? `${p.copies} copies` : "",
-    `${(p.volume / 1000).toFixed(1)} cm³`,
-    massText(p),
+    p.printedWith ? `in ${p.printedWith}` : `${(p.volume / 1000).toFixed(1)} cm³`,
+    p.printedWith ? "" : massText(p),
     p.details ? `${p.details.split("\n").length} detail${p.details.includes("\n") ? "s" : ""}` : "",
     p.auto.length ? `${p.auto.length} automatic` : "",
   ]
@@ -215,6 +215,7 @@ const HELP = `@side-holes count=4 diameter=2 at=10
 @round end=fore radius=3
 @solid
 @screw-joint at=105 from=aft
+@one-piece
 @auto vents=off`;
 
 /** What turning each kind of automatic detail off means, for the button's tooltip. */
@@ -224,6 +225,7 @@ const AUTO_NAMES: Record<string, string> = {
   pocket: "altimeter pocket",
   "nut-trap": "eyebolt nut trap",
   edges: "lead-ins and rounded rims on the shoulders",
+  "one-piece": "printing the fins as part of their tube (they get their own STL)",
 };
 
 function showSelected(): void {
@@ -242,6 +244,10 @@ function showSelected(): void {
       <dt>Plastic</dt><dd data-f="volume"></dd>
     </dl>
     <ul class="messages"></ul>
+    <section class="spin" hidden>
+      <h3>Spin from fin cant</h3>
+      <p></p>
+    </section>
     <label for="details"><strong>Details</strong> <span class="muted">— holes, pockets, nut traps…</span></label>
     <textarea id="details" rows="6" spellcheck="false" placeholder="@side-holes count=4 diameter=2 at=10"></textarea>
     <div class="row">
@@ -268,6 +274,8 @@ function showSelected(): void {
       <code>edges=off</code>.
       <code>@screw-joint</code> on a body tube prints it in two pieces that screw together where <code>at</code> says
       (e.g. a fin section that unscrews), each in its own STL file.
+      <code>@one-piece</code> on a fin set prints the fins as part of their body tube, in its STL file (added by itself
+      for printed fins on a printed tube without tabs; <code>@auto one-piece=off</code> prints them on their own).
       The details are saved into the part's comment when you save the .ork.</p>
     </details>
     <h3>Download this part</h3>
@@ -290,10 +298,11 @@ function showSelected(): void {
   const field = (f: string) => selectedEl.querySelector<HTMLElement>(`[data-f="${f}"]`)!;
   field("type").textContent = `${p.type}${p.copies > 1 ? `, ${p.copies} copies` : ""}`;
   field("material").textContent = p.material || "—";
-  field("volume").textContent =
-    `${(p.volume / 1000).toFixed(2)} cm³` +
-    (p.density ? ` = ${massText(p)} at ${p.density} kg/m³` : "") +
-    (p.massOverride !== undefined ? ` (OpenRocket mass override: ${p.massOverride.toFixed(1)} g)` : "");
+  field("volume").textContent = p.printedWith
+    ? `printed as part of ${p.printedWith}, so it's counted there`
+    : `${(p.volume / 1000).toFixed(2)} cm³` +
+      (p.density ? ` = ${massText(p)} at ${p.density} kg/m³` : "") +
+      (p.massOverride !== undefined ? ` (OpenRocket mass override: ${p.massOverride.toFixed(1)} g)` : "");
   const messages = selectedEl.querySelector(".messages")!;
   for (const [text, cls] of [...p.errors.map((t) => [t, "error"]), ...p.warnings.map((t) => [t, "warn"])]) {
     const li = document.createElement("li");
@@ -301,6 +310,7 @@ function showSelected(): void {
     li.textContent = text;
     messages.append(li);
   }
+  if (p.spin) showSpin(p.spin);
   selectedEl.querySelector("pre")!.textContent = HELP;
   const box = selectedEl.querySelector<HTMLTextAreaElement>("#details")!;
   box.value = p.details;
@@ -334,6 +344,21 @@ function showSelected(): void {
   });
   const shown = matches.get(p.key);
   if (shown) showMatch(shown);
+}
+
+/** Canted fins: how fast they spin the rocket, and what that does to the eggs. */
+function showSpin(s: SpinView): void {
+  const section = selectedEl.querySelector<HTMLElement>(".spin")!;
+  section.hidden = false;
+  const at = s.simulation
+    ? `at ${s.speed.toFixed(0)} m/s, the top speed of the simulation "${s.simulation}" when OpenRocket last ran it`
+    : `at ${s.speed.toFixed(0)} m/s (no simulation with results is saved in this file)`;
+  section.querySelector("p")!.textContent =
+    `Canted ${Math.abs(s.cantDegrees).toFixed(1)}°: the rocket spins at ${s.revs.toFixed(1)} turns a second ${at}, ` +
+    `which pushes the side of an egg (${s.eggRadius} mm from the axis) outward with ${s.load.toFixed(1)} g. ` +
+    `The spin goes with the speed: ${s.revsPer10.toFixed(1)} turns a second for every 10 m/s. (OpenRocket's own roll formulas; ` +
+    `its simulations agree to within 2%.) Cant hardly changes the apogee: once the rocket spins, each fin meets the air ` +
+    `almost straight on, so it adds next to no drag. To set the apogee, change the nose weight.`;
 }
 
 /** The selected part's automatic details: each with why it's there, to edit or turn off. */

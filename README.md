@@ -33,6 +33,8 @@ Then open http://localhost:5173. Open or drop an `.ork`, and the parts appear in
 - **Automatic details:** listed under a part's details, each with why it's there. **Edit** copies one
   into the details to change it; **Turn off** turns that kind off for the part (see
   [Automatic details](#automatic-details)).
+- **Canted fins:** a canted fin set shows how fast it spins the rocket and how hard that pushes on
+  the eggs (see [Fin cant, spin and apogee](#fin-cant-spin-and-apogee)).
 - **Cut in half:** shows walls, pockets and vents from the inside.
 - **Compare with your CAD file:** for a nose cone or transition, pick a STEP or STL file of the real
   part. The page lists what to change in OpenRocket and which detail lines to add, checks the
@@ -173,6 +175,11 @@ eyebolt, a lead-in on the aft shoulder and a rounded fore rim.
     (`on` by default; `detent=off` for none). `angle` turns them.
   - Each piece gets its own STL file ("(fore piece)" and "(aft piece)"), and its own part in the
     STEP files.
+- **`@one-piece`** on a fin set prints the fins as part of the body tube they're on, in the tube's
+  STL file, so there's nothing to glue or line up. Each fin's root reaches into the tube's wall
+  (down to its inside surface, and only where the tube is) and is joined to it; canted fins come out
+  at their angle. Fin tabs are left off. Printed fins on a printed tube get it by themselves (see
+  below). With a screw joint, the fins go on the piece they're on.
 - **Solid parts:** pockets and nut traps need a solid part. Tick **Filled** for the part in
   OpenRocket, and set its material to your infill density so the mass stays right, or write
   `@solid`. A filled part is built solid, shoulders included; OpenRocket's mass model still counts
@@ -247,10 +254,17 @@ and the website and the report give the reason for each.
   - On the end the part is printed standing on (the wider one), a 30° chamfer blended in with a
     round, which needs no support. A thin hollow shoulder gets a plain 45° chamfer.
   - On the other end, a round.
+- **Fins printed with their tube.** Printed fins (PLA, PETG...) on a printed body tube get
+  `@one-piece`: one print, nothing to glue, and canted fins come out at exactly their angle. Not
+  when the fins have tabs, which are for gluing into slots in the tube. OpenRocket's own
+  "3D printable nose cone and fins" example asks for its fin can to be exported this way. The
+  report counts the file's plastic at the tube's material; OpenRocket still uses the fins' own for
+  them.
 
 A line of the same kind written in the part's comment takes the place of the automatic one
 (`@chamfer` and `@round` for each end on its own). `@auto off` turns them all off for that part,
-or one kind at a time: `@auto vents=off`, `solid=off`, `pocket=off`, `nut-trap=off`, `edges=off`. When
+or one kind at a time: `@auto vents=off`, `solid=off`, `pocket=off`, `nut-trap=off`, `edges=off`,
+`one-piece=off` (on the fin set: the fins are printed on their own). When
 comparing with a CAD file, the changes include `@auto off`, so the part comes out just like the
 file.
 
@@ -265,6 +279,51 @@ It warns when:
 - the altimeter's space has no vent holes;
 - ejection gas could reach the altimeter or the eggs.
 
+## Fin cant, spin and apogee
+
+Canted fins (each turned a few degrees about its root, set as **Fin cant** in OpenRocket) are
+built at their angle, turned about the middle of the root as OpenRocket does, with the root cut to
+follow the tube's curve so it sits flush.
+
+**What cant does.** The tilted fins push the rocket round. As it spins faster, each fin meets the
+air at a smaller angle, until the push and the drag of the spinning cancel: the rocket settles at a
+spin that goes up with its speed (twice as fast, twice the spin). Once it spins, each fin meets the
+air almost straight on, so cant adds next to no drag, and the energy that goes into the spin is a
+fraction of a percent of the flight's. **So cant hardly changes the apogee**, and it can't be used
+to set it: in OpenRocket, canting an ARC rocket's fins 10° changes its apogee by under a metre (and
+raises it slightly, as the spin averages out the wind's push). What cant does is spin the rocket,
+which evens out small differences between the fins and in the motor's thrust, and pushes everything
+in the rocket outward: the side of an egg 22 mm from the axis is pushed with about 1 g at a typical
+ARC rocket's 3 turns a second (2° of cant), 5 g at 5°, 20 g at 10°. To set the apogee, change the
+nose weight.
+
+**On the website**, a canted fin set shows how fast it spins the rocket and the push on an egg, at
+the top speed of the simulations saved in the `.ork`. It's worked out with OpenRocket's own roll
+formulas (`src/aero/roll.ts`), which agree with OpenRocket's simulations to within 2%.
+
+**From the command line**, ork-cad runs OpenRocket's own simulator on the design (OpenRocket must
+be installed; set `OPENROCKET_HOME` if it isn't in `C:\Program Files\OpenRocket`):
+
+```
+npm run flight -- my-rocket.ork                            every simulation's apogee as it is
+npm run flight -- my-rocket.ork --target 250               the nose weight for a 250 m apogee
+npm run flight -- my-rocket.ork --target 820ft --write my-rocket-tuned.ork
+npm run flight -- my-rocket.ork --cant 0,1,2,5             apogee, spin and egg push at each cant
+npm run flight -- my-rocket.ork --target 250 --cant        the cant for 250 m, if any can reach it
+```
+
+- `--target` finds the mass of the nose weight (the mass component called "ballast" or "weight", or
+  the one named with `--mass "<name>"`) that gives that apogee in OpenRocket, to 0.05 m. It shows
+  how much each gram changes the apogee, the lift-off mass, and the apogee with that weight in each
+  of the design's other simulations (other temperatures, winds or delays). `--write` saves a copy of
+  the design with the new mass.
+- `--sim` picks the simulation: its number in OpenRocket's list, or part of its name (default the
+  first). Each flight uses the simulation's own random seed, so the same design always gives the
+  same answer.
+- `--cant` lists, for each angle, the apogee and the fastest spin OpenRocket simulates, and the push
+  on an egg (`--egg 25` for 25 mm from the axis). With `--target`, it looks for the cant between 0°
+  and 15° that gives that apogee, and says so when none does (nearly always).
+
 ## What it builds
 
 | OpenRocket part | Built as |
@@ -273,7 +332,7 @@ It warns when:
 | Wall thickness | Measured perpendicular to the surface, as OpenRocket's mass model intends, so the wall is even all the way to the tip |
 | Shoulders | Tube with a cap as thick as its wall when "capped" is ticked |
 | Body tubes, inner tubes, couplers, centering rings, bulkheads, engine blocks, launch lugs | Exact tubes/discs |
-| Trapezoidal, elliptical (true ellipse) and freeform fins, fin tabs | Exact outline, extruded to the fin thickness |
+| Trapezoidal, elliptical (true ellipse) and freeform fins, fin tabs | Exact outline, extruded to the fin thickness; canted fins turned by their cant, the root cut to the tube's curve |
 | Rail buttons | Same shape as OpenRocket's (base, neck, flange, optional screw head) |
 | Mass components, parachutes, shock cords | Nothing (no printable shape) |
 
@@ -290,7 +349,7 @@ designed. A note says what it did. Measuring the tab's position from the fin's f
 OpenRocket stops it moving.
 
 Not supported yet (those parts are listed as not built, with the reason): pods and side boosters,
-motor clusters, flipped nose cones (tail cones), canted fins, fins on a nose cone or transition,
+motor clusters, flipped nose cones (tail cones), fins on a nose cone or transition,
 tube fins. Rounded or airfoil fin edges are built square for now, and fin fillets aren't built yet
 (it says so when a design has them). Shoulders with 0 mm walls are left out, since they can't be
 printed. A shoulder narrower than the inside of the part it's on doesn't touch the wall, so it comes
@@ -299,7 +358,8 @@ out as a separate piece (with a note).
 ## How it's checked
 
 `npm test` runs these checks on four of the example rockets that come with OpenRocket 24.12, on
-a test rocket with one fin set for each way OpenRocket places a fin tab, and on a small ARC-style
+a test rocket with one fin set for each way OpenRocket places a fin tab, the same rocket with each
+fin set canted (−10° to 15°), and on a small ARC-style
 rocket with a printed transition holding the altimeter (all in `test/fixtures/`), and on any
 designs of your own in `test/private/fixtures/`, a folder git ignores.
 
@@ -317,6 +377,17 @@ designs of your own in `test/private/fixtures/`, a folder git ignores.
   slicing: 0.002% for most noses, 1.2% for the very blunt ellipsoid in the base-drag example.
 - **Surfaces:** every vertex of OpenRocket's own OBJ export lies on our parts' outside surfaces,
   within 0.001 mm (the rounding of OpenRocket's 32-bit OBJ numbers).
+- **Canted fins:** every vertex of OpenRocket's OBJ export outside the tube lies on our canted fins
+  (within 0.001 mm), so the angle, the direction and the point they turn about are OpenRocket's.
+  OpenRocket lowers only the middle line of a canted root onto the tube, so its root corners dip into
+  the tube (by at most what ours reaches down), and its mass model is 0.1–1.8% off our exact solid.
+- **Fins printed with the tube:** the tube with its fins joined on has exactly the volume of the
+  tube, the fins and the sliver between each flat root and the tube's curve (worked out by hand);
+  canted, exactly the tube and the canted fins; with a screw joint, they go on the right piece.
+- **Spin:** the spin worked out for canted fins agrees with OpenRocket's own simulations of two of
+  its examples to within 2%, and goes with the speed and the cant as it should.
+- **Tuning:** the search for a target apogee (`src/flight/solve.ts`) finds it in a few flights,
+  stays in range, and says when it can't be reached.
 - **Every shape type:** all six nose/transition shapes, as nose cones and as growing, shrinking and
   clipped transitions, follow OpenRocket's formulas to 0.0001 mm inside and out, have the exact wall
   volume (except where the wall is thicker than the shape's curvature at a sharp end, which is
@@ -364,11 +435,12 @@ npm run reference -- test/fixtures/new-design.ork
 ```
 
 This needs OpenRocket installed (set `OPENROCKET_HOME` if it isn't in `C:\Program Files\OpenRocket`).
-`tools/openrocket-ref/build/RefExport.class` is precompiled. To rebuild it, compile with the Eclipse
+`tools/openrocket-ref/build/RefExport.class` and `Flight.class` (which runs OpenRocket's
+simulations for `npm run flight`) are precompiled. To rebuild them, compile with the Eclipse
 compiler, which runs on OpenRocket's Java 17:
 
 ```
-"%OPENROCKET_HOME%\jre\bin\java" -jar ecj-3.38.0.jar -17 -cp "%OPENROCKET_HOME%\jar\OpenRocket-24.12.jar" -d tools/openrocket-ref/build tools/openrocket-ref/RefExport.java
+"%OPENROCKET_HOME%\jre\bin\java" -jar ecj-3.38.0.jar -17 -cp "%OPENROCKET_HOME%\jar\OpenRocket-24.12.jar" -d tools/openrocket-ref/build tools/openrocket-ref/RefExport.java tools/openrocket-ref/Flight.java
 ```
 
 ## What OpenRocket's OBJ export gets wrong for printing
@@ -400,6 +472,9 @@ Found while building the tests:
 - `src/match/`: comparing a part with a CAD file: reading it and finding its axis and outline
   (`cad.ts`), working out the changes and checking them (`compare.ts`), and surface distances
   (`distance.ts`).
+- `src/aero/roll.ts`: the spin canted fins give, with OpenRocket's roll formulas.
+- `src/node/openrocket.ts`, `tools/openrocket-ref/Flight.java`: run OpenRocket's own simulations
+  from Node; `src/flight/solve.ts` finds the setting for a target apogee.
 - `web/`: the website.
   - `main.ts`: the page.
   - `viewer.ts`: the 3D view (three.js).

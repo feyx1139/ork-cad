@@ -1,0 +1,210 @@
+<?xml version='1.0' encoding='utf-8'?>
+<openrocket version="1.10" creator="OpenRocket 24.12">
+  <rocket>
+    <name>Canted fins</name>
+    <id>6b0f0c2e-3a52-4c1e-9d38-1f2a7c9e0001</id>
+    <axialoffset method="absolute">0.0</axialoffset>
+    <position type="absolute">0.0</position>
+    <designtype>original</designtype>
+    <referencetype>maximum</referencetype>
+    <subcomponents>
+      <stage>
+        <name>Sustainer</name>
+        <id>6b0f0c2e-3a52-4c1e-9d38-1f2a7c9e0002</id>
+        <subcomponents>
+          <bodytube>
+            <name>Body tube</name>
+            <id>6b0f0c2e-3a52-4c1e-9d38-1f2a7c9e0003</id>
+            <finish>normal</finish>
+            <material type="bulk" density="680.0" group="PaperProducts">Cardboard</material>
+            <length>0.6</length>
+            <thickness>5.0E-4</thickness>
+            <radius>0.0125</radius>
+            <subcomponents>
+              <trapezoidfinset>
+                <name>Trapezoidal, tab in the middle</name>
+                <id>6b0f0c2e-3a52-4c1e-9d38-1f2a7c9e0011</id>
+                <instancecount>3</instancecount>
+                <fincount>3</fincount>
+                <radiusoffset method="surface">0.0</radiusoffset>
+                <angleoffset method="relative">0.0</angleoffset>
+                <axialoffset method="top">0.0</axialoffset>
+                <position type="top">0.0</position>
+                <material type="bulk" density="630.0" group="Woods">Plywood (birch)</material>
+                <thickness>0.003</thickness>
+                <crosssection>square</crosssection>
+                <cant>5.0</cant>
+                <tabheight>0.01</tabheight>
+                <tablength>0.04</tablength>
+                <tabposition relativeto="center">0.0</tabposition>
+                <tabposition relativeto="middle">0.0</tabposition>
+                <filletradius>0.0</filletradius>
+                <rootchord>0.08</rootchord>
+                <tipchord>0.04</tipchord>
+                <height>0.05</height>
+                <sweeplength>0.02</sweeplength>
+              </trapezoidfinset>
+              <trapezoidfinset>
+                <name>Trapezoidal, tab from the bottom</name>
+                <id>6b0f0c2e-3a52-4c1e-9d38-1f2a7c9e0012</id>
+                <instancecount>3</instancecount>
+                <fincount>3</fincount>
+                <radiusoffset method="surface">0.0</radiusoffset>
+                <angleoffset method="relative">0.0</angleoffset>
+                <axialoffset method="top">0.085</axialoffset>
+                <position type="top">0.085</position>
+                <material type="bulk" density="630.0" group="Woods">Plywood (birch)</material>
+                <thickness>0.003</thickness>
+                <crosssection>square</crosssection>
+                <cant>-3.0</cant>
+                <tabheight>0.01</tabheight>
+                <tablength>0.04</tablength>
+                <tabposition relativeto="end">-0.005</tabposition>
+                <tabposition relativeto="bottom">-0.005</tabposition>
+                <filletradius>0.0</filletradius>
+                <rootchord>0.08</rootchord>
+                <tipchord>0.04</tipchord>
+                <height>0.05</height>
+                <sweeplength>0.02</sweeplength>
+              </trapezoidfinset>
+              <ellipticalfinset>
+                <name>Elliptical, tab in the middle</name>
+                <id>6b0f0c2e-3a52-4c1e-9d38-1f2a7c9e0013</id>
+                <instancecount>3</instancecount>
+                <fincount>3</fincount>
+                <radiusoffset method="surface">0.0</radiusoffset>
+                <angleoffset method="relative">0.0</angleoffset>
+                <axialoffset method="top">0.17</axialoffset>
+                <position type="top">0.17</position>
+                <material type="bulk" density="630.0" group="Woods">Plywood (birch)</material>
+                <thickness>0.003</thickness>
+                <crosssection>square</crosssection>
+                <cant>8.0</cant>
+                <tabheight>0.01</tabheight>
+                <tablength>0.04</tablength>
+                <tabposition relativeto="center">0.0</tabposition>
+                <tabposition relativeto="middle">0.0</tabposition>
+                <filletradius>0.0</filletradius>
+                <rootchord>0.08</rootchord>
+                <height>0.05</height>
+              </ellipticalfinset>
+              <ellipticalfinset>
+                <name>Elliptical, tab from the bottom</name>
+                <id>6b0f0c2e-3a52-4c1e-9d38-1f2a7c9e0014</id>
+                <instancecount>3</instancecount>
+                <fincount>3</fincount>
+                <radiusoffset method="surface">0.0</radiusoffset>
+                <angleoffset method="relative">0.0</angleoffset>
+                <axialoffset method="top">0.255</axialoffset>
+                <position type="top">0.255</position>
+                <material type="bulk" density="630.0" group="Woods">Plywood (birch)</material>
+                <thickness>0.003</thickness>
+                <crosssection>square</crosssection>
+                <cant>2.0</cant>
+                <tabheight>0.01</tabheight>
+                <tablength>0.04</tablength>
+                <tabposition relativeto="end">0.0</tabposition>
+                <tabposition relativeto="bottom">0.0</tabposition>
+                <filletradius>0.0</filletradius>
+                <rootchord>0.08</rootchord>
+                <height>0.05</height>
+              </ellipticalfinset>
+              <freeformfinset>
+                <name>Freeform, tab in the middle</name>
+                <id>6b0f0c2e-3a52-4c1e-9d38-1f2a7c9e0015</id>
+                <instancecount>3</instancecount>
+                <fincount>3</fincount>
+                <radiusoffset method="surface">0.0</radiusoffset>
+                <angleoffset method="relative">0.0</angleoffset>
+                <axialoffset method="top">0.34</axialoffset>
+                <position type="top">0.34</position>
+                <material type="bulk" density="630.0" group="Woods">Plywood (birch)</material>
+                <thickness>0.003</thickness>
+                <crosssection>square</crosssection>
+                <cant>-10.0</cant>
+                <tabheight>0.01</tabheight>
+                <tablength>0.04</tablength>
+                <tabposition relativeto="center">0.0</tabposition>
+                <tabposition relativeto="middle">0.0</tabposition>
+                <filletradius>0.0</filletradius>
+                <finpoints>
+                  <point x="0.0" y="0.0"/>
+                  <point x="0.02" y="0.03"/>
+                  <point x="0.06" y="0.03"/>
+                  <point x="0.08" y="0.0"/>
+                </finpoints>
+              </freeformfinset>
+              <ellipticalfinset>
+                <name>Elliptical, tab from the front</name>
+                <id>6b0f0c2e-3a52-4c1e-9d38-1f2a7c9e0016</id>
+                <instancecount>3</instancecount>
+                <fincount>3</fincount>
+                <radiusoffset method="surface">0.0</radiusoffset>
+                <angleoffset method="relative">0.0</angleoffset>
+                <axialoffset method="top">0.425</axialoffset>
+                <position type="top">0.425</position>
+                <material type="bulk" density="630.0" group="Woods">Plywood (birch)</material>
+                <thickness>0.003</thickness>
+                <crosssection>square</crosssection>
+                <cant>15.0</cant>
+                <tabheight>0.01</tabheight>
+                <tablength>0.04</tablength>
+                <tabposition relativeto="front">0.01</tabposition>
+                <tabposition relativeto="top">0.01</tabposition>
+                <filletradius>0.0</filletradius>
+                <rootchord>0.08</rootchord>
+                <height>0.05</height>
+              </ellipticalfinset>
+              <ellipticalfinset>
+                <name>Elliptical, 30 mm, tab in the middle</name>
+                <id>6b0f0c2e-3a52-4c1e-9d38-1f2a7c9e0017</id>
+                <instancecount>3</instancecount>
+                <fincount>3</fincount>
+                <radiusoffset method="surface">0.0</radiusoffset>
+                <angleoffset method="relative">0.0</angleoffset>
+                <axialoffset method="top">0.51</axialoffset>
+                <position type="top">0.51</position>
+                <material type="bulk" density="630.0" group="Woods">Plywood (birch)</material>
+                <thickness>0.003</thickness>
+                <crosssection>square</crosssection>
+                <cant>4.0</cant>
+                <tabheight>0.01</tabheight>
+                <tablength>0.04</tablength>
+                <tabposition relativeto="center">0.0</tabposition>
+                <tabposition relativeto="middle">0.0</tabposition>
+                <filletradius>0.0</filletradius>
+                <rootchord>0.03</rootchord>
+                <height>0.05</height>
+              </ellipticalfinset>
+              <freeformfinset>
+                <name>Freeform, 30 mm, tab in the middle</name>
+                <id>6b0f0c2e-3a52-4c1e-9d38-1f2a7c9e0018</id>
+                <instancecount>3</instancecount>
+                <fincount>3</fincount>
+                <radiusoffset method="surface">0.0</radiusoffset>
+                <angleoffset method="relative">0.0</angleoffset>
+                <axialoffset method="top">0.555</axialoffset>
+                <position type="top">0.555</position>
+                <material type="bulk" density="630.0" group="Woods">Plywood (birch)</material>
+                <thickness>0.003</thickness>
+                <crosssection>square</crosssection>
+                <cant>-6.0</cant>
+                <tabheight>0.01</tabheight>
+                <tablength>0.04</tablength>
+                <tabposition relativeto="center">0.0</tabposition>
+                <tabposition relativeto="middle">0.0</tabposition>
+                <filletradius>0.0</filletradius>
+                <finpoints>
+                  <point x="0.0" y="0.0"/>
+                  <point x="0.01" y="0.03"/>
+                  <point x="0.02" y="0.03"/>
+                  <point x="0.03" y="0.0"/>
+                </finpoints>
+              </freeformfinset>
+            </subcomponents>
+          </bodytube>
+        </subcomponents>
+      </stage>
+    </subcomponents>
+  </rocket>
+</openrocket>

@@ -15,12 +15,14 @@ import {
   makeEllipseArc,
   makeFace,
   makeLine,
+  makeCompound,
   revolution,
   Vector,
   type Edge,
   type Shape3D,
 } from "replicad";
 import {
+  allParts,
   isFilled,
   UnsupportedError,
   type CylinderPart,
@@ -36,7 +38,8 @@ import { clipLength, isClipped, transitionRadius } from "./shapes.ts";
 import { frameFor, type Frame, type P2 } from "./frame.ts";
 import { curveEnd, curveStart, ellipsePoint, EPS, polygon, reverseCurve, revolveSection, SNAP, type Curve } from "./section.ts";
 import { cutFeatures } from "../features/apply.ts";
-import { buildJointTube } from "../features/joint.ts";
+import { buildJointTube, jointPieces } from "../features/joint.ts";
+import { FeatureError } from "../features/parse.ts";
 
 export interface BuiltPart {
   part: Part;
@@ -62,10 +65,17 @@ export function buildPart(part: Part, model: RocketModel): BuiltPart | null {
       solids = part.instances.map((inst) => {
         // A tube printed in two pieces that screw together is built as both pieces (joint.ts).
         const joint = part.features.find((f) => f.kind === "screw-joint");
-        return joint ? buildJointTube(part, joint, frameFor(model, inst), inst.angle, warnings) : buildCylinder(part, frameFor(model, inst));
+        const tube = joint ? buildJointTube(part, joint, frameFor(model, inst), inst.angle, warnings) : buildCylinder(part, frameFor(model, inst));
+        return withFins(part, tube, model, warnings);
       });
       break;
     case "finset":
+      if (part.features.some((f) => f.kind === "one-piece")) {
+        // Built as part of its body tube (withFins), so it has no shape of its own.
+        finTube(part, model);
+        solids = [];
+        break;
+      }
       solids = part.instances.map((inst) => buildFin(part, model, inst, warnings));
       break;
     case "railbutton":
@@ -399,8 +409,18 @@ function shoulderSection(sh: Shoulder, side: "fore" | "aft", L: number, filled: 
 // ---------------------------------------------------------------------------------------------
 // Fins
 
-function buildFin(p: FinSetPart, model: RocketModel, inst: Instance, warnings: string[]): Shape3D {
-  if (p.cant !== 0) throw new UnsupportedError(`"${p.name}" has canted fins, which aren't supported yet.`);
+/**
+ * One fin, in its place. A canted fin is turned by the cant angle about the line from the rocket's
+ * axis through the middle of its root (as OpenRocket does), so its root no longer lies along the
+ * tube: the root is carried down into the tube and cut off by the tube's outside surface, so it
+ * follows the curve of the tube exactly (OpenRocket lowers only the root's middle line the same
+ * way). A tab is turned with the fin and left as it is.
+ *
+ * `into`: the fins are printed as part of this body tube (@one-piece), so the root reaches down
+ * into its wall, stopping at its inside surface and its ends, to be joined with it; a tab is left
+ * off (there's no slot to glue it into).
+ */
+function buildFin(p: FinSetPart, model: RocketModel, inst: Instance, warnings: string[], into?: CylinderPart): Shape3D {
   if (p.crossSection !== "square") {
     warnings.push(`${p.name}: ${p.crossSection} fin edges are built square for now (as OpenRocket's own export does).`);
   }
@@ -412,11 +432,19 @@ function buildFin(p: FinSetPart, model: RocketModel, inst: Instance, warnings: s
   const ztop = model.length - inst.x;
   const R = p.bodyRadius;
   const pt = (fx: number, fy: number): [number, number, number] => [R + fy, 0, ztop - fx];
+  const t = p.thickness;
+  const canted = p.cant === 0 ? 0 : rootDrop(p);
+  const drop = into ? R - into.innerRadius + 0.5 : canted;
+  /** The root, from its trailing end to its leading end: straight, or down into the tube and back. */
+  const root = (trail: number, lead: number): Edge[] =>
+    drop === 0
+      ? [makeLine(pt(trail, 0), pt(lead, 0))]
+      : [makeLine(pt(trail, 0), pt(trail, -drop)), makeLine(pt(trail, -drop), pt(lead, -drop)), makeLine(pt(lead, -drop), pt(lead, 0))];
   const edges: Edge[] = [];
   const o = p.outline;
   if (o.shape === "elliptical") {
     const c = o.rootChord / 2;
-    edges.push(makeLine(pt(o.rootChord, 0), pt(0, 0)));
+    edges.push(...root(o.rootChord, 0));
     const center = pt(c, 0);
     edges.push(
       c >= o.height
@@ -436,12 +464,33 @@ function buildFin(p: FinSetPart, model: RocketModel, inst: Instance, warnings: s
     for (let i = 0; i < pts.length; i++) {
       const a = pts[i];
       const b = pts[(i + 1) % pts.length];
-      if (Math.hypot(b[0] - a[0], b[1] - a[1]) > EPS) edges.push(makeLine(pt(a[0], a[1]), pt(b[0], b[1])));
+      if (Math.hypot(b[0] - a[0], b[1] - a[1]) <= EPS) continue;
+      // The edge closing the outline is the root (the points start and end on it).
+      if (i === pts.length - 1) edges.push(...root(a[0], b[0]));
+      else edges.push(makeLine(pt(a[0], a[1]), pt(b[0], b[1])));
     }
   }
-  const t = p.thickness;
   let fin: Shape3D = basicFaceExtrusion(makeFace(assembleWire(edges)).translate(0, -t / 2, 0), new Vector([0, t, 0]));
-  if (p.tab) {
+  // Cant: turned about the line out from the axis through the root's middle. OpenRocket turns the
+  // trailing edge toward its z axis (rotate_y), which is the CAD frame's -Y for the fin at angle 0.
+  const cant = (s: Shape3D) => (p.cant === 0 ? s : s.rotate((-p.cant * 180) / Math.PI, [0, 0, ztop - p.length / 2], [1, 0, 0]));
+  if (into) {
+    // Down to the tube's inside, and only where the tube is: past its ends the root stays on the
+    // tube's outside surface, as if the tube went on.
+    fin = cant(fin);
+    const reach = p.length + 2 * drop + 2;
+    const z0 = ztop - p.length - drop - 1;
+    if (into.innerRadius > 0) fin = fin.cut(makeCylinder(into.innerRadius, reach, [0, 0, z0], [0, 0, 1]));
+    const tubeTop = model.length - into.instances[0].x;
+    const tubeBottom = tubeTop - into.length;
+    if (z0 + reach > tubeTop) fin = fin.cut(makeCylinder(R, z0 + reach - tubeTop, [0, 0, tubeTop], [0, 0, 1]));
+    if (z0 < tubeBottom) fin = fin.cut(makeCylinder(R, tubeBottom - z0, [0, 0, z0], [0, 0, 1]));
+    if (p.tab) warnings.push(`${p.name}: the fin tabs are left off, as the fins are printed as part of ${into.name}.`);
+  } else if (drop > 0) {
+    const tube = makeCylinder(R, p.length + 2 * drop + 2, [0, 0, ztop - p.length - drop - 1], [0, 0, 1]);
+    fin = cant(fin).cut(tube);
+  }
+  if (p.tab && !into) {
     const { start, length, height } = p.tab;
     const tab = [
       [start, 0],
@@ -450,9 +499,48 @@ function buildFin(p: FinSetPart, model: RocketModel, inst: Instance, warnings: s
       [start + length, 0],
     ].map(([fx, fy]) => pt(fx, fy));
     const tabEdges = tab.map((a, i) => makeLine(a, tab[(i + 1) % tab.length]));
-    fin = fin.fuse(basicFaceExtrusion(makeFace(assembleWire(tabEdges)).translate(0, -t / 2, 0), new Vector([0, t, 0])));
+    const tabSolid = basicFaceExtrusion(makeFace(assembleWire(tabEdges)).translate(0, -t / 2, 0), new Vector([0, t, 0]));
+    fin = fin.fuse(cant(tabSolid));
   }
   return fin.rotate((inst.angle * 180) / Math.PI, [0, 0, 0], [0, 0, 1]);
+}
+
+/**
+ * How far a canted fin's root has to reach down into the tube (mm) so it meets the tube's surface
+ * everywhere: at the root's ends the fin stands sideways of the line it was on by half the root
+ * times sin(cant), plus half its thickness.
+ */
+function rootDrop(p: FinSetPart): number {
+  const R = p.bodyRadius;
+  const side = (p.length / 2) * Math.abs(Math.sin(p.cant)) + (p.thickness / 2) * Math.cos(p.cant);
+  if (side >= R) throw new UnsupportedError(`"${p.name}": the fins are canted so far that their roots stand off the tube.`);
+  return R - Math.sqrt(R * R - side * side) + 0.5;
+}
+
+/** The body tube a fin set is on. */
+export function finTube(p: FinSetPart, model: RocketModel): CylinderPart {
+  const tube = allParts(model).find((q) => q.children.includes(p));
+  if (!tube || tube.kind !== "cylinder" || tube.type !== "bodytube") throw new FeatureError(`"${p.name}" isn't on a body tube, so it can't be printed as part of one`);
+  return tube;
+}
+
+/** A body tube with the fins printed as part of it (fin sets with "@one-piece") joined on. */
+function withFins(tube: CylinderPart, solid: Shape3D, model: RocketModel, warnings: string[]): Shape3D {
+  const sets = tube.children.filter((c): c is FinSetPart => c.kind === "finset" && c.features.some((f) => f.kind === "one-piece"));
+  if (!sets.length) return solid;
+  for (const fins of sets) {
+    warnings.push(`${tube.name}: has ${fins.name} (${fins.instances.length}) on it, printed as part of it ("@one-piece" on the fin set).`);
+    for (const inst of fins.instances) {
+      const fin = buildFin(fins, model, inst, warnings, tube);
+      // A tube with a screw joint is two pieces: the fin joins the one it's on (it can't cross the split).
+      const pieces = "solids" in solid && solid.solids.length > 1 ? jointPieces(solid) : [solid];
+      const z = fin.boundingBox.center[2];
+      const k = Math.max(0, pieces.findIndex((piece) => piece.boundingBox.bounds[0][2] - 1e-6 <= z && z <= piece.boundingBox.bounds[1][2] + 1e-6));
+      pieces[k] = pieces[k].fuse(fin);
+      solid = pieces.length > 1 ? (makeCompound(pieces) as Shape3D) : pieces[0];
+    }
+  }
+  return solid;
 }
 
 // ---------------------------------------------------------------------------------------------

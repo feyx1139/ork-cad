@@ -21,7 +21,15 @@ for (const rocket of ROCKETS) {
       assert.ok(p, `missing ${c.name}`);
       assert.equal(p.instances.length, c.locations.length, `${c.name}: number of copies`);
       c.locations.forEach(([x, y, z], i) => {
-        const inst = p.instances[i];
+        let inst = p.instances[i];
+        if (p.kind === "finset" && p.cant !== 0) {
+          // OpenRocket gives a canted fin's position where the front of its root has turned to:
+          // about the root's middle, by the cant (FinSet.getInstanceOffsets).
+          const h = p.length / 2;
+          const side = Math.sin(p.cant) * h;
+          const a = inst.angle;
+          inst = { ...inst, x: inst.x + h - Math.cos(p.cant) * h, y: inst.y - side * Math.sin(a), z: inst.z + side * Math.cos(a) };
+        }
         const d = Math.hypot(inst.x - x * 1000, inst.y - y * 1000, inst.z - z * 1000);
         assert.ok(d < TOL, `${c.name} #${i + 1}: off by ${d} mm`);
       });

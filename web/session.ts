@@ -17,6 +17,7 @@ import { PRINTED } from "../src/export/colors.ts";
 import { reportText } from "../src/export/report.ts";
 import { readCad } from "../src/match/cad.ts";
 import { applyMatch, matchPart, matchText, type MatchResult } from "../src/match/compare.ts";
+import { EGG_RADIUS, revsPerSecond, spinLoad, steadyRoll } from "../src/aero/roll.ts";
 
 /** A comparison of a part with a CAD file, for the page. */
 export interface MatchView extends MatchResult {
@@ -39,6 +40,20 @@ export interface AutoDetail {
   /** Which "@auto" setting turns it off. */
   kind: AutoKind;
   why: string;
+}
+
+/** How fast canted fins spin the rocket (src/aero/roll.ts), at the top speed of a saved simulation. */
+export interface SpinView {
+  cantDegrees: number;
+  /** m/s, and the simulation it's from (undefined: none saved with results, so a round speed). */
+  speed: number;
+  simulation?: string;
+  revs: number;
+  /** Push on the side of an egg, in g, and how far that is from the axis (mm). */
+  load: number;
+  eggRadius: number;
+  /** Revolutions per second for each 10 m/s. */
+  revsPer10: number;
 }
 
 export interface PartView {
@@ -65,6 +80,10 @@ export interface PartView {
   /** Detail lines that can't be read or don't fit; the part is shown without them. */
   errors: string[];
   mesh?: PartMesh;
+  /** Canted fins: the spin they give. */
+  spin?: SpinView;
+  /** Fins printed as part of their tube: the tube's name (they have no shape of their own). */
+  printedWith?: string;
 }
 
 export interface SpacesView {
@@ -216,9 +235,41 @@ export class Session {
       warnings,
       errors,
       mesh: solids.length ? meshOf(solids) : undefined,
+      spin: part.kind === "finset" && part.cant !== 0 ? this.spin(part) : undefined,
+      printedWith: this.printedWith(part)?.name,
     };
     this.views.set(key, view);
     return view;
+  }
+
+  /** The tube fins are printed as part of (@one-piece), if they are. */
+  private printedWith(part: Part): Part | undefined {
+    if (part.kind !== "finset" || !part.features.some((f) => f.kind === "one-piece")) return undefined;
+    return allParts(this.model).find((q) => q.children.includes(part));
+  }
+
+  /** The spin canted fins give, at the fastest top speed among the file's saved simulations. */
+  private spin(part: Part & { kind: "finset" }): SpinView | undefined {
+    const fastest = this.model.simulations
+      .filter((s) => s.maxVelocity !== undefined)
+      .sort((a, b) => b.maxVelocity! - a.maxVelocity!)[0];
+    const speed = fastest?.maxVelocity ?? 50;
+    const mach = fastest?.maxMach;
+    let rate: number;
+    try {
+      rate = steadyRoll(part, speed, mach);
+    } catch {
+      return undefined;
+    }
+    return {
+      cantDegrees: (part.cant * 180) / Math.PI,
+      speed,
+      simulation: fastest?.name,
+      revs: revsPerSecond(rate),
+      load: spinLoad(rate),
+      eggRadius: EGG_RADIUS,
+      revsPer10: revsPerSecond(rate) * (10 / speed),
+    };
   }
 
   /**
@@ -269,7 +320,10 @@ export class Session {
   async partFile(key: string, format: "stl" | "step"): Promise<FileOut> {
     const part = this.part(key);
     const solids = this.solids.get(key) ?? [];
-    if (!solids.length) throw new Error(`${part.name} has no shape to export.`);
+    if (!solids.length) {
+      const into = this.printedWith(part);
+      throw new Error(into ? `${part.name} are printed as part of ${into.name}: download that.` : `${part.name} has no shape to export.`);
+    }
     const base = safeFileName(part.name);
     if (format === "step") return { name: `${base}.step`, bytes: stepOf(part, solids) };
     const files = this.stlFiles(part, solids);
@@ -372,9 +426,13 @@ export class Session {
   }
 }
 
-/** What a part's build depends on beyond its OpenRocket fields: its details, and its notes about them. */
+/**
+ * What a part's build depends on beyond its OpenRocket fields: its details, and its notes about
+ * them; for a body tube, also whether fins are printed as part of it.
+ */
 function signature(part: Part): string {
-  return JSON.stringify([part.features.map((f) => [f.source, f.auto ?? ""]), part.autoNotes ?? [], part.detailErrors]);
+  const fins = part.children.filter((c) => c.kind === "finset" && c.features.some((f) => f.kind === "one-piece")).map((c) => c.id);
+  return JSON.stringify([part.features.map((f) => [f.source, f.auto ?? ""]), part.autoNotes ?? [], part.detailErrors, fins]);
 }
 
 function autoKind(kind: string): AutoKind {

@@ -51,5 +51,9 @@ function toolsFor(part: Part, model: RocketModel, inst: Instance, f: Feature, wa
       // Built into the tube's shape (joint.ts), which also checked it; nothing to cut.
       if (part.features.filter((g) => g.kind === "screw-joint").length > 1) throw new FeatureError("a tube can have one screw joint");
       return [];
+    case "one-piece":
+      // Built into the body tube's shape (parts.ts); nothing to cut.
+      if (part.kind !== "finset") throw new FeatureError(`only fin sets can be printed in one piece with their tube, not a ${part.type}`);
+      return [];
   }
 }

@@ -150,7 +150,8 @@ export function exportRocket(model: RocketModel, { step = false }: { step?: bool
       skipped.push({ part, reason: e.message });
       continue;
     }
-    if (!built) continue;
+    // Parts without a shape of their own (fins printed as part of their tube) have no files.
+    if (!built?.solids.length) continue;
     const copies = built.solids.length;
     const density = Number(part.node?.fields.get("material")?.attrs.density);
     const override = Number(part.node?.fields.get("overridemass")?.text);

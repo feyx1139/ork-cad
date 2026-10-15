@@ -8,19 +8,16 @@
 // C:\Program Files\OpenRocket; set OPENROCKET_HOME for another one (the folder holding jar/ and jre/).
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { findOpenRocket } from "../src/node/openrocket.ts";
 
-const home = process.env.OPENROCKET_HOME ?? "C:\\Program Files\\OpenRocket";
-const jarDir = path.join(home, "jar");
-const jar = existsSync(jarDir) ? readdirSync(jarDir).find((f) => /^OpenRocket.*\.jar$/i.test(f)) : undefined;
-const java = path.join(home, "jre", "bin", process.platform === "win32" ? "java.exe" : "java");
-if (!jar || !existsSync(java)) {
-  console.error(`OpenRocket not found in ${home} (expected jar/OpenRocket-*.jar and jre/). Set OPENROCKET_HOME.`);
+let install;
+try {
+  install = findOpenRocket();
+} catch (e) {
+  console.error((e as Error).message);
   process.exit(1);
 }
-const classes = fileURLToPath(new URL("../tools/openrocket-ref/build", import.meta.url));
 const orks = process.argv.slice(2);
 if (!orks.length) {
   console.error("usage: npm run reference -- <design.ork> [more .ork files]");
@@ -28,7 +25,7 @@ if (!orks.length) {
 }
 for (const ork of orks) {
   const base = ork.replace(/\.ork$/i, "") + ".openrocket";
-  const out = execFileSync(java, ["-cp", [path.join(jarDir, jar), classes].join(path.delimiter), "RefExport", ork, base], {
+  const out = execFileSync(install.java, ["-cp", [install.jar, install.classes].join(path.delimiter), "RefExport", ork, base], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
   });

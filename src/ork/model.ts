@@ -3,7 +3,7 @@
 // frame: x runs along the rocket axis from the nose tip toward the tail; y and z are radial,
 // and an angle of 0 points along +y, increasing toward +z.
 
-import { attributesOf, childElements, type OrkField, type OrkFile, type OrkNode } from "./read.ts";
+import { attributesOf, childElements, type OrkField, type OrkFile, type OrkNode, type OrkSimulation } from "./read.ts";
 import { FeatureError, parseFeatures, type AutoSettings, type Feature } from "../features/parse.ts";
 import { transitionRadius } from "../geometry/shapes.ts";
 
@@ -123,7 +123,7 @@ export interface OtherPart extends PartBase {
   kind: "other";
 }
 
-/** A component the tool can't build yet (pods, tube fins, canted fins...): reported, not built. */
+/** A component the tool can't build yet (pods, tube fins...): reported, not built. */
 export interface UnsupportedPart extends PartBase {
   kind: "unsupported";
   reason: string;
@@ -145,6 +145,8 @@ export interface RocketModel {
   stages: Part[];
   creator: string;
   formatVersion: string;
+  /** The simulations saved in the file, with OpenRocket's results from when it last ran them. */
+  simulations: OrkSimulation[];
 }
 
 const M = 1000; // metres to millimetres
@@ -200,6 +202,7 @@ export function buildModel(file: OrkFile, options: { keepDetailErrors?: boolean 
     stages,
     creator: file.creator,
     formatVersion: file.formatVersion,
+    simulations: file.simulations,
   };
   model.length = rocketLength(model);
   const problems: string[] = [];

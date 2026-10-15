@@ -9,6 +9,7 @@
 //   @round end=fore radius=3
 //   @solid                    (prints a nose cone or transition solid that OpenRocket has hollow)
 //   @screw-joint at=105 from=aft   (prints a body tube in two pieces that screw together)
+//   @one-piece                (on a fin set: prints the fins as part of their body tube)
 //   @auto vents=off           (ork-cad's automatic details, see auto.ts; "@auto off" for none)
 //
 // Lengths are millimetres unless a unit is given (2.5mm, 0.3cm, 0.1in, 1/8in); angles are degrees.
@@ -122,13 +123,18 @@ export interface ScrewJoint extends FeatureBase {
   angle: number;
 }
 
-export type Feature = SideHoles | EndHoles | Pocket | NutTrap | Chamfer | Round | Solid | ScrewJoint;
+/** On a fin set: the fins are printed as part of the body tube they're on, their roots joined into its wall. */
+export interface OnePiece extends FeatureBase {
+  kind: "one-piece";
+}
+
+export type Feature = SideHoles | EndHoles | Pocket | NutTrap | Chamfer | Round | Solid | ScrewJoint | OnePiece;
 
 /**
  * The kinds of detail ork-cad can add by itself (see auto.ts). An "@auto" line turns them off or
  * on: "@auto off", "@auto vents=off edges=off".
  */
-export const AUTO_KINDS = ["solid", "pocket", "vents", "nut-trap", "edges"] as const;
+export const AUTO_KINDS = ["solid", "pocket", "vents", "nut-trap", "edges", "one-piece"] as const;
 export type AutoKind = (typeof AUTO_KINDS)[number];
 export type AutoSettings = Record<AutoKind, boolean>;
 
@@ -143,6 +149,7 @@ const KEYS: Record<Feature["kind"], string[]> = {
   round: ["end", "radius"],
   solid: [],
   "screw-joint": ["at", "from", "pitch", "length", "depth", "clearance", "detent", "angle"],
+  "one-piece": [],
 };
 
 /**
@@ -305,6 +312,7 @@ const PARSERS: Record<Feature["kind"], (args: Args, source: string) => Feature> 
   },
   round: (args, source) => ({ kind: "round", end: requiredEnd(args), radius: positive(args, "radius"), source }),
   solid: (_args, source) => ({ kind: "solid", source }),
+  "one-piece": (_args, source) => ({ kind: "one-piece", source }),
   "screw-joint": (args, source) => {
     const pitch = args.has("pitch") ? positive(args, "pitch") : 3;
     const depth = args.has("depth") ? positive(args, "depth") : pitch / 3;

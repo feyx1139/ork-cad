@@ -83,7 +83,7 @@ for (const c of cases) {
       aftShoulder: { radius: 0, length: 0, thickness: 0, capped: false },
     };
     assert.equal(isClipped(part), c.clipped ?? false);
-    const model: RocketModel = { name: "", length: L, bodyLength: L, stages: [], creator: "", formatVersion: "" };
+    const model: RocketModel = { name: "", length: L, bodyLength: L, stages: [], creator: "", formatVersion: "", simulations: [] };
     const built = buildPart(part, model)!;
     const solid = built.solids[0];
     const volume = solidVolume(solid);

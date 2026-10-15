@@ -1,6 +1,6 @@
 // The website's design session (web/session.ts), run in Node on OpenRocket's "3D printable nose
-// cone and fins" example: open it, build and mesh its parts, edit details, make every download, and
-// compare a part with a CAD file of the real part and take on its changes.
+// cone and fins" example: open it, build and mesh its parts, edit details, make every download,
+// compare a part with a CAD file of the real part and take on its changes, and canted fins' spin.
 
 import { before, test } from "node:test";
 import assert from "node:assert/strict";
@@ -15,6 +15,8 @@ import { parseFeatures } from "../src/features/parse.ts";
 import { buildPart } from "../src/geometry/parts.ts";
 import { solidVolume } from "../src/geometry/measure.ts";
 import { stlOf } from "../src/export/files.ts";
+import { decodeOrkBytes } from "../src/ork/read.ts";
+import { revsPerSecond, spinLoad, steadyRoll } from "../src/aero/roll.ts";
 
 before(() => initOpenCascadeNode());
 
@@ -47,6 +49,13 @@ test("opening the example builds and meshes every part", () => {
     ],
   );
   for (const v of views) {
+    if (v.name === "Trapezoidal fin set") {
+      // Printed fins on the printed fin can are printed as part of it (the example says to export
+      // them together), so they're in its shape and have none of their own.
+      assert.deepEqual(v.auto.map((a) => a.line), ["@one-piece"]);
+      assert.ok(!v.mesh && v.volume === 0 && v.printedWith === "Printable Fin Can and Motor Mount");
+      continue;
+    }
     assert.ok(v.mesh && v.mesh.triangles.length > 0 && v.mesh.edges.length > 0, `${v.name} mesh`);
     assert.equal(v.mesh.vertices.length, v.mesh.normals.length);
     assert.ok(Math.max(...v.mesh.triangles) < v.mesh.vertices.length / 3, `${v.name} triangle indices`);
@@ -109,8 +118,9 @@ test("downloads: one part, everything in a zip, and the .ork with details", asyn
   const step = await session.partFile(key("Printable nose cone"), "step");
   assert.equal(step.name, "Printable nose cone.step");
   assert.match(new TextDecoder().decode(step.bytes.slice(0, 20)), /^ISO-10303-21/);
-  const stl = await session.partFile(key("Trapezoidal fin set"), "stl");
-  assert.equal(stl.name, "Trapezoidal fin set (print 3).stl");
+  await assert.rejects(session.partFile(key("Trapezoidal fin set"), "stl"), /printed as part of Printable Fin Can and Motor Mount/);
+  const stl = await session.partFile(key("Launch lug"), "stl");
+  assert.equal(stl.name, "Launch lug.stl");
   const triangles = new DataView(stl.bytes.buffer, stl.bytes.byteOffset).getUint32(80, true);
   assert.equal(stl.bytes.length, 84 + 50 * triangles, "binary STL");
 
@@ -119,8 +129,9 @@ test("downloads: one part, everything in a zip, and the .ork with details", asyn
   assert.equal(zip.name, "3d-printable-nose-cone-and-fins parts.zip");
   const files = unzipSync(zip.bytes);
   const names = Object.keys(files).sort();
-  assert.equal(names.filter((n) => n.endsWith(".stl")).length, 10, "an STL for every part");
-  assert.ok(names.includes("01 Printable nose cone.stl") && names.includes("05 Trapezoidal fin set (print 3).stl"));
+  assert.equal(names.filter((n) => n.endsWith(".stl")).length, 9, "an STL for every part, the fins in the fin can's");
+  assert.ok(names.includes("01 Printable nose cone.stl") && names.includes("03 Printable Fin Can and Motor Mount.stl"));
+  assert.ok(!names.some((n) => n.includes("Trapezoidal fin set")));
   assert.deepEqual(
     names.filter((n) => !n.endsWith(".stl")),
     ["report.txt"],
@@ -133,10 +144,9 @@ test("downloads: one part, everything in a zip, and the .ork with details", asyn
   const onshape = session.rocketStep();
   assert.equal(onshape.name, "3d-printable-nose-cone-and-fins for Onshape.step");
   const assembly = new TextDecoder().decode(onshape.bytes);
-  assert.equal((assembly.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\(/g) ?? []).length, 12, "10 parts, the fin set as 3 fins");
+  assert.equal((assembly.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\(/g) ?? []).length, 9, "9 parts, the fins in the fin can");
   assert.match(assembly, /PRODUCT\('Printable nose cone'/);
-  assert.match(assembly, /PRODUCT\('Trapezoidal fin set 3'/);
-  assert.match(report, /05 Trapezoidal fin set \(print 3\)\.stl {2}[\d.]+ cm³ each, 3 = /);
+  assert.doesNotMatch(assembly, /PRODUCT\('Trapezoidal fin set/);
 
   const saved = session.saveOrk();
   assert.equal(saved.name, FILE);
@@ -189,4 +199,29 @@ test("a tube with a screw joint downloads as its two pieces", async () => {
   const all = unzipSync((await session.zip()).bytes);
   assert.ok(all["02 Paper Body Tube -- DO NOT PRINT (fore piece).stl"] && all["03 Paper Body Tube -- DO NOT PRINT (aft piece).stl"]);
   assert.match(strFromU8(all["report.txt"]), /03 Paper Body Tube -- DO NOT PRINT \(aft piece\)\.stl {2}\d/);
+});
+
+test("canted fins: the spin they give, and printing them on their own", () => {
+  // The example with its fins canted 3°.
+  const xml = decodeOrkBytes(new Uint8Array(readFileSync(fixture(FILE)))).replace("<cant>0.0</cant>", "<cant>3.0</cant>");
+  const session = Session.open(new TextEncoder().encode(xml), FILE, xmlTools);
+  const views = session.buildAll();
+  const fins = views.find((v) => v.name === "Trapezoidal fin set")!;
+  const part = session.part(fins.key);
+  assert.ok(part.kind === "finset" && fins.spin);
+  // At the fastest top speed among the simulations saved in the file.
+  const fastest = session.model.simulations.reduce((a, b) => ((b.maxVelocity ?? 0) > (a.maxVelocity ?? 0) ? b : a));
+  assert.equal(fins.spin.simulation, fastest.name);
+  assert.equal(fins.spin.speed, fastest.maxVelocity);
+  const rate = steadyRoll(part, fastest.maxVelocity!, fastest.maxMach);
+  assert.ok(Math.abs(fins.spin.revs - revsPerSecond(rate)) < 1e-12 && Math.abs(fins.spin.load - spinLoad(rate)) < 1e-12);
+  assert.equal(fins.spin.cantDegrees, 3);
+
+  // Printed on their own: the fins get their shape back, and the fin can loses them.
+  const can = views.find((v) => v.name === "Printable Fin Can and Motor Mount")!;
+  const rebuilt = session.setDetails(fins.key, "@auto one-piece=off");
+  const separate = rebuilt.find((v) => v.key === fins.key)!;
+  const canNow = rebuilt.find((v) => v.key === can.key)!;
+  assert.ok(separate.mesh && separate.volume > 0);
+  assert.ok(canNow && canNow.volume < can.volume - separate.volume * 0.99, "the fin can is rebuilt without them");
 });
