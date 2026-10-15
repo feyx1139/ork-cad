@@ -159,6 +159,20 @@ eyebolt, a lead-in on the aft shoulder and a rounded fore rim.
 - **`@round`** rounds the outside edge at an end with `radius`.
 - **`@solid`** builds a nose cone or transition solid, shoulders included, although OpenRocket has
   it hollow.
+- **`@screw-joint`** prints a body tube in two pieces that screw together, e.g. a fin section that
+  unscrews from the tube above it: `@screw-joint at=105 from=aft`.
+  - A threaded plug stands up from the aft piece and screws into a threaded collar inside the fore
+    piece until the two tube ends meet, so the outside stays one smooth tube. The inside is
+    narrower over the joint (about 7–8 mm less across); you're warned if a centering
+    ring or motor tube is in the way, and it's an error if fins or a launch lug cross the split.
+  - `at`: where the tube ends meet, from the end named by `from` (`fore` or `aft`; default `fore`).
+  - `pitch` (default 3), `length` of thread engaged (default 5 turns), `depth` (default a third of
+    the pitch) and `clearance` between the threads all round (default 0.3). The thread is
+    right-handed, with 45° flanks, so both pieces print standing on their aft ends without supports.
+  - `detent`: two small bumps on the plug click into dimples in the collar when it's screwed home
+    (`on` by default; `detent=off` for none). `angle` turns them.
+  - Each piece gets its own STL file ("(fore piece)" and "(aft piece)"), and its own part in the
+    STEP files.
 - **Solid parts:** pockets and nut traps need a solid part. Tick **Filled** for the part in
   OpenRocket, and set its material to your infill density so the mass stays right, or write
   `@solid`. A filled part is built solid, shoulders included; OpenRocket's mass model still counts

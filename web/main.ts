@@ -214,6 +214,7 @@ const HELP = `@side-holes count=4 diameter=2 at=10
 @chamfer end=aft length=6 angle=30 round=3
 @round end=fore radius=3
 @solid
+@screw-joint at=105 from=aft
 @auto vents=off`;
 
 /** What turning each kind of automatic detail off means, for the button's tooltip. */
@@ -265,6 +266,8 @@ function showSelected(): void {
       replaces the automatic detail of the same kind; <code>@auto off</code> turns them all off for this part, or one kind
       at a time: <code>@auto vents=off</code>, <code>solid=off</code>, <code>pocket=off</code>, <code>nut-trap=off</code>,
       <code>edges=off</code>.
+      <code>@screw-joint</code> on a body tube prints it in two pieces that screw together where <code>at</code> says
+      (e.g. a fin section that unscrews), each in its own STL file.
       The details are saved into the part's comment when you save the .ork.</p>
     </details>
     <h3>Download this part</h3>

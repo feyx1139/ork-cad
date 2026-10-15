@@ -174,3 +174,19 @@ test("comparing the nose cone with an STL of the real one, and taking on its cha
   const saved = allParts(modelFromBytes(session.saveOrk().bytes)).find((p) => p.name === "Printable nose cone") as TransitionPart;
   assert.ok(Math.abs(saved.aftShoulder.length - 25) < 1e-9 && saved.comment === `${lines}\n@auto off`);
 });
+
+test("a tube with a screw joint downloads as its two pieces", async () => {
+  const { session, key } = open();
+  const tube = key("Paper Body Tube -- DO NOT PRINT");
+  const [view] = session.setDetails(tube, "@screw-joint at=60");
+  assert.deepEqual(view.errors, []);
+  const one = await session.partFile(tube, "stl");
+  assert.equal(one.name, "Paper Body Tube -- DO NOT PRINT (2 pieces).zip");
+  assert.deepEqual(Object.keys(unzipSync(one.bytes)), [
+    "Paper Body Tube -- DO NOT PRINT (fore piece).stl",
+    "Paper Body Tube -- DO NOT PRINT (aft piece).stl",
+  ]);
+  const all = unzipSync((await session.zip()).bytes);
+  assert.ok(all["02 Paper Body Tube -- DO NOT PRINT (fore piece).stl"] && all["03 Paper Body Tube -- DO NOT PRINT (aft piece).stl"]);
+  assert.match(strFromU8(all["report.txt"]), /03 Paper Body Tube -- DO NOT PRINT \(aft piece\)\.stl {2}\d/);
+});

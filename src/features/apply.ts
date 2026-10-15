@@ -47,5 +47,9 @@ function toolsFor(part: Part, model: RocketModel, inst: Instance, f: Feature, wa
       // Built into the part's shape (isFilled); nothing to cut.
       if (part.kind !== "transition") throw new FeatureError(`only nose cones and transitions can be made solid this way, not a ${part.type}`);
       return [];
+    case "screw-joint":
+      // Built into the tube's shape (joint.ts), which also checked it; nothing to cut.
+      if (part.features.filter((g) => g.kind === "screw-joint").length > 1) throw new FeatureError("a tube can have one screw joint");
+      return [];
   }
 }

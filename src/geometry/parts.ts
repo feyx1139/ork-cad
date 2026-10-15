@@ -36,6 +36,7 @@ import { clipLength, isClipped, transitionRadius } from "./shapes.ts";
 import { frameFor, type Frame, type P2 } from "./frame.ts";
 import { curveEnd, curveStart, ellipsePoint, EPS, polygon, reverseCurve, revolveSection, SNAP, type Curve } from "./section.ts";
 import { cutFeatures } from "../features/apply.ts";
+import { buildJointTube } from "../features/joint.ts";
 
 export interface BuiltPart {
   part: Part;
@@ -58,7 +59,11 @@ export function buildPart(part: Part, model: RocketModel): BuiltPart | null {
       solids = part.instances.map((inst) => buildTransition(part, frameFor(model, inst), warnings));
       break;
     case "cylinder":
-      solids = part.instances.map((inst) => buildCylinder(part, frameFor(model, inst)));
+      solids = part.instances.map((inst) => {
+        // A tube printed in two pieces that screw together is built as both pieces (joint.ts).
+        const joint = part.features.find((f) => f.kind === "screw-joint");
+        return joint ? buildJointTube(part, joint, frameFor(model, inst), inst.angle, warnings) : buildCylinder(part, frameFor(model, inst));
+      });
       break;
     case "finset":
       solids = part.instances.map((inst) => buildFin(part, model, inst, warnings));

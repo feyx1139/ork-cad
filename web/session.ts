@@ -12,7 +12,7 @@ import { addAutoDetails } from "../src/features/auto.ts";
 import { buildPart } from "../src/geometry/parts.ts";
 import { solidVolume } from "../src/geometry/measure.ts";
 import { findCompartments } from "../src/checks/compartments.ts";
-import { safeFileName, stepFile, stepOf, stepPieces, stlName, stlOf, type StepPiece } from "../src/export/files.ts";
+import { printPieces, safeFileName, stepFile, stepOf, stepPieces, stlName, stlOf, type StepPiece } from "../src/export/files.ts";
 import { PRINTED } from "../src/export/colors.ts";
 import { reportText } from "../src/export/report.ts";
 import { readCad } from "../src/match/cad.ts";
@@ -262,14 +262,29 @@ export class Session {
     };
   }
 
-  /** One part as STL (one copy, for printing) or STEP (every copy in place, exact, for Onshape). */
+  /**
+   * One part as STL (one copy, for printing) or STEP (every copy in place, exact, for Onshape). A
+   * tube with a screw joint is printed in two pieces, so its STL download is a zip of both.
+   */
   async partFile(key: string, format: "stl" | "step"): Promise<FileOut> {
     const part = this.part(key);
     const solids = this.solids.get(key) ?? [];
     if (!solids.length) throw new Error(`${part.name} has no shape to export.`);
     const base = safeFileName(part.name);
     if (format === "step") return { name: `${base}.step`, bytes: stepOf(part, solids) };
-    return { name: stlName(base, solids.length), bytes: stlOf(solids[0], part.name) };
+    const files = this.stlFiles(part, solids);
+    if (files.length === 1) return files[0];
+    return { name: `${base} (${files.length} pieces).zip`, bytes: zipSync(Object.fromEntries(files.map((f) => [f.name, f.bytes]))) };
+  }
+
+  /** A part's STL files: one copy of it, or of each piece it's printed in. */
+  private stlFiles(part: Part, solids: Shape3D[]): (FileOut & { volume: number })[] {
+    const split = solids.map((s) => printPieces(part, s));
+    return split[0].map(({ name, shape }, k) => ({
+      name: stlName(safeFileName(name), solids.length),
+      bytes: stlOf(shape, name),
+      volume: split.reduce((sum, pieces) => sum + solidVolume(pieces[k].shape), 0),
+    }));
   }
 
   /**
@@ -292,11 +307,16 @@ export class Session {
     for (const part of this.parts) {
       const key = this.keyOf(part);
       const view = this.views.get(key);
-      if (!this.solids.get(key)?.length || !view) continue;
-      const stl = await this.partFile(key, "stl");
-      const fileName = `${String(++n).padStart(2, "0")} ${stl.name}`;
-      files[fileName] = stl.bytes;
-      reportParts.push({ ...view, fileName, details: view.details ? view.details.split("\n") : [] });
+      const solids = this.solids.get(key);
+      if (!solids?.length || !view) continue;
+      const stls = this.stlFiles(part, solids);
+      for (const stl of stls) {
+        const fileName = `${String(++n).padStart(2, "0")} ${stl.name}`;
+        files[fileName] = stl.bytes;
+        // A mass typed into OpenRocket is for the whole tube, not one of its pieces.
+        const massOverride = stls.length > 1 ? undefined : view.massOverride;
+        reportParts.push({ ...view, fileName, volume: stl.volume, massOverride, details: view.details ? view.details.split("\n") : [] });
+      }
     }
     files["report.txt"] = strToU8(reportText(this.model, reportParts, findCompartments(this.model)));
     const name = safeFileName(this.rocket.fileName.replace(/\.ork$/i, "")) || "rocket";

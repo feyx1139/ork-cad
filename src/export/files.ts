@@ -1,6 +1,7 @@
 // Turns a rocket model into files: an STL per part for printing (one copy of the part, so a fin
-// set's file is one fin), and STEP files with the exact surfaces for Onshape: the whole rocket in
-// one file, and one file per part. Works the same in Node and in a browser.
+// set's file is one fin; a tube with a screw joint gets one per piece), and STEP files with the
+// exact surfaces for Onshape: the whole rocket in one file, and one file per part. Works the same
+// in Node and in a browser.
 
 import { getOC, type Shape3D } from "replicad";
 import { allParts, UnsupportedError, type Part, type RocketModel } from "../ork/model.ts";
@@ -8,6 +9,7 @@ import { buildPart } from "../geometry/parts.ts";
 import { solidVolume } from "../geometry/measure.ts";
 import { stlMesh, writeSTL } from "../geometry/stl.ts";
 import { partColor } from "./colors.ts";
+import { jointPieces } from "../features/joint.ts";
 
 /** STL triangles stay within 0.01 mm of the exact surface and turn at most 0.05 rad (3°) each. */
 export const PRINT_MESH = { tolerance: 0.01, angularTolerance: 0.05 };
@@ -77,10 +79,29 @@ export function stepFile(name: string, pieces: StepPiece[]): Uint8Array {
   }
 }
 
-/** A part's copies as STEP pieces: "Fin set 1", "Fin set 2"... for parts with several. */
+/**
+ * What one copy of a part is printed as: itself, or the two pieces of a tube with a screw joint
+ * (joint.ts), named "(fore piece)" and "(aft piece)".
+ */
+export function printPieces(part: Part, solid: Shape3D): { name: string; shape: Shape3D }[] {
+  if (part.features.some((f) => f.kind === "screw-joint")) {
+    const pieces = jointPieces(solid);
+    if (pieces.length === 2) {
+      return [
+        { name: `${part.name} (fore piece)`, shape: pieces[0] },
+        { name: `${part.name} (aft piece)`, shape: pieces[1] },
+      ];
+    }
+  }
+  return [{ name: part.name, shape: solid }];
+}
+
+/** A part's copies as STEP pieces: "Fin set 1", "Fin set 2"... for parts with several; a split tube's pieces separately. */
 export function stepPieces(part: Part, solids: Shape3D[]): StepPiece[] {
-  const material = part.node?.fields.get("material")?.text ?? "";
-  return solids.map((shape, i) => ({ name: solids.length > 1 ? `${part.name} ${i + 1}` : part.name, shape, color: partColor(material) }));
+  const color = partColor(part.node?.fields.get("material")?.text ?? "");
+  return solids.flatMap((solid, i) =>
+    printPieces(part, solid).map(({ name, shape }) => ({ name: solids.length > 1 ? `${name} ${i + 1}` : name, shape, color })),
+  );
 }
 
 /** Every copy of a part in one STEP file, in place. */
@@ -130,26 +151,33 @@ export function exportRocket(model: RocketModel, { step = false }: { step?: bool
       continue;
     }
     if (!built) continue;
-    const number = String(parts.length + 1).padStart(2, "0");
     const copies = built.solids.length;
     const density = Number(part.node?.fields.get("material")?.attrs.density);
     const override = Number(part.node?.fields.get("overridemass")?.text);
-    const exported: ExportedPart = {
-      part,
-      fileName: `${number} ${stlName(safeFileName(part.name), copies)}`,
-      stl: stlOf(built.solids[0], part.name),
-      copies,
-      volume: built.solids.reduce((sum, s) => sum + solidVolume(s), 0),
-      pieces: built.solids.reduce((n, s) => n + s.solids.length, 0),
-      density: Number.isFinite(density) ? density : undefined,
-      massOverride: Number.isFinite(override) ? override * 1000 : undefined,
-      warnings: built.warnings,
-    };
-    if (step) {
-      exported.step = stepOf(part, built.solids);
-      everything.push(...stepPieces(part, built.solids));
+    // Each piece printed separately (one, unless the part is a tube with a screw joint) gets its files.
+    const split = built.solids.map((s) => printPieces(part, s));
+    for (let k = 0; k < split[0].length; k++) {
+      const name = split[0][k].name;
+      const shapes = split.map((pieces) => pieces[k].shape);
+      const number = String(parts.length + 1).padStart(2, "0");
+      const exported: ExportedPart = {
+        part,
+        fileName: `${number} ${stlName(safeFileName(name), copies)}`,
+        stl: stlOf(shapes[0], name),
+        copies,
+        volume: shapes.reduce((sum, s) => sum + solidVolume(s), 0),
+        pieces: shapes.reduce((n, s) => n + s.solids.length, 0),
+        density: Number.isFinite(density) ? density : undefined,
+        massOverride: Number.isFinite(override) && split[0].length === 1 ? override * 1000 : undefined,
+        warnings: built.warnings,
+      };
+      if (step) {
+        const color = partColor(part.node?.fields.get("material")?.text ?? "");
+        exported.step = stepFile(name, shapes.map((shape, i) => ({ name: copies > 1 ? `${name} ${i + 1}` : name, shape, color })));
+      }
+      parts.push(exported);
     }
-    parts.push(exported);
+    if (step) everything.push(...stepPieces(part, built.solids));
   }
   return { parts, skipped, assembly: step ? stepFile(model.name, everything) : undefined };
 }

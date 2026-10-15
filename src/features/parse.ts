@@ -8,6 +8,7 @@
 //   @chamfer end=aft length=6 angle=30 round=3
 //   @round end=fore radius=3
 //   @solid                    (prints a nose cone or transition solid that OpenRocket has hollow)
+//   @screw-joint at=105 from=aft   (prints a body tube in two pieces that screw together)
 //   @auto vents=off           (ork-cad's automatic details, see auto.ts; "@auto off" for none)
 //
 // Lengths are millimetres unless a unit is given (2.5mm, 0.3cm, 0.1in, 1/8in); angles are degrees.
@@ -99,7 +100,29 @@ export interface Solid extends FeatureBase {
   kind: "solid";
 }
 
-export type Feature = SideHoles | EndHoles | Pocket | NutTrap | Chamfer | Round | Solid;
+/**
+ * Splits a body tube in two pieces that screw together (see joint.ts): a threaded plug on the aft
+ * piece screws into a threaded collar inside the fore piece, until the two tube ends meet.
+ */
+export interface ScrewJoint extends FeatureBase {
+  kind: "screw-joint";
+  /** Where the tube ends meet: distance from `from`, toward the other end. */
+  at: number;
+  from: "fore" | "aft";
+  pitch: number;
+  /** How far the threads engage, mm. */
+  length: number;
+  /** Thread depth, mm (the flanks are at 45°, so each is as wide as this). */
+  depth: number;
+  /** Room between the plug's thread and the collar's, all round, mm. */
+  clearance: number;
+  /** Bumps on the plug that click into dimples in the collar when it's screwed home. */
+  detent: boolean;
+  /** Angle of the first of the two bumps, radians. */
+  angle: number;
+}
+
+export type Feature = SideHoles | EndHoles | Pocket | NutTrap | Chamfer | Round | Solid | ScrewJoint;
 
 /**
  * The kinds of detail ork-cad can add by itself (see auto.ts). An "@auto" line turns them off or
@@ -119,6 +142,7 @@ const KEYS: Record<Feature["kind"], string[]> = {
   chamfer: ["end", "length", "inset", "angle", "round"],
   round: ["end", "radius"],
   solid: [],
+  "screw-joint": ["at", "from", "pitch", "length", "depth", "clearance", "detent", "angle"],
 };
 
 /**
@@ -281,6 +305,26 @@ const PARSERS: Record<Feature["kind"], (args: Args, source: string) => Feature> 
   },
   round: (args, source) => ({ kind: "round", end: requiredEnd(args), radius: positive(args, "radius"), source }),
   solid: (_args, source) => ({ kind: "solid", source }),
+  "screw-joint": (args, source) => {
+    const pitch = args.has("pitch") ? positive(args, "pitch") : 3;
+    const depth = args.has("depth") ? positive(args, "depth") : pitch / 3;
+    // Each 45° flank is as wide as the thread is deep; what's left of the pitch is the flat crest and root.
+    if (2 * depth >= pitch) throw new FeatureError(`depth must be less than half the pitch (${pitch / 2} mm), or the flanks don't fit`);
+    const clearance = args.has("clearance") ? positive(args, "clearance") : 0.3;
+    if (clearance >= depth) throw new FeatureError(`clearance must be less than the thread depth (${Number(depth.toFixed(2))} mm)`);
+    return {
+      kind: "screw-joint",
+      at: positive(args, "at"),
+      from: choice(args, "from", ["fore", "aft"] as const, "fore"),
+      pitch,
+      length: args.has("length") ? positive(args, "length") : 5 * pitch,
+      depth,
+      clearance,
+      detent: args.has("detent") ? onOff(args.get("detent")!, "detent") : true,
+      angle: angleArg(args, "angle", 0),
+      source,
+    };
+  },
 };
 
 function parseArgs(text: string, allowed: string[]): Args {
